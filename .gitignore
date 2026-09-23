@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# Run output (logs and plots are regenerated, don't commit them)
+data/*
+!data/.gitkeep
+analysis/out/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Arduino build artifacts
+build/
+*.bin
+*.elf

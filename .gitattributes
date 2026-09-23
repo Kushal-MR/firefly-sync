@@ -1,0 +1,9 @@
+# Keep line endings sane across Windows and Linux
+* text=auto eol=lf
+*.ino text eol=lf
+*.bat text eol=crlf
+
+# Don't try to diff binaries
+*.png binary
+*.jpg binary
+*.pdf binary

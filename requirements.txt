@@ -1,0 +1,11 @@
+# Core simulation
+numpy>=1.24
+
+# Live visualisation (Phase 1)
+pygame>=2.5
+
+# Graphs and analysis (Phase 3)
+matplotlib>=3.7
+
+# Tests
+pytest>=7.4
