@@ -72,15 +72,6 @@ goes in it. Read `docs/PLAN.md` before writing anything.
 | 2 | Real ESP32 + LED joins the swarm over Wi-Fi | not started |
 | 3 | Reachback algorithm, experiments, graphs | not started |
 
-## Team
-
-| USN | Name |
-|-----|------|
-| 1RV25CS091 | Kushal M R |
-| 1RV25CS093 | Lakkuru Ramteja |
-| 1RV25CS089 | K Pushkar Sai |
-| 1RV25CS083 | Kola Krishna Kaushal |
-
 ## Licence
 
 MIT — see `LICENSE`.
