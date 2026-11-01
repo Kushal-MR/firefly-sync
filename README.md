@@ -22,12 +22,13 @@ whether firefly synchronization still works on cheap, everyday hardware.
 
 ## The research gap
 
-Firefly synchronization has been proved in maths (1990), demonstrated on
-special sensor radios (2005), on FPGA research radios (2016), on electronic
-firefly circuits and on real flying drones (2025). Every one of those used
-specialised or costly hardware.
+Leaderless synchronization has been shown in theory (Nature Communications,
+2024), in drone-network simulations (IEEE Transactions on Wireless
+Communications, 2024), across wired datacenter servers (ACM SIGCOMM, 2025),
+on real drones with external tracking (IEEE BalkanCom, 2025) and on special
+sensor radios (ACM SenSys, 2005).
 
-**Nobody has tested it on a cheap everyday Wi-Fi board like the ESP32.**
+**Nobody has tested leaderless firefly sync on cheap ESP32 Wi-Fi.**
 That is what we test. See `docs/ALGORITHM.md` for the papers.
 
 ## Repository layout

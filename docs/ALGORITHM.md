@@ -65,18 +65,19 @@ layer over `oscillator.py`, not a rewrite of it.
 
 ## Papers behind this project
 
-| Paper | Contribution | Limitation |
-|-------|-------------|------------|
-| Mirollo & Strogatz (1990) | The maths — proved pulse-coupled oscillators synchronize | Assumes instant, lossless messages |
-| Werner-Allen et al. (2005) | Reachback Firefly Algorithm, on real sensor nodes | Special low-power sensor radios |
-| Brandner et al. (2016) | Real wireless tests under one microsecond; also corrects clocks ticking at different rates | Costly FPGA research radios; accuracy drops in sparse networks |
-| Santillán (2025) | 40 electronic fireflies sensing each other by light | Optical, in a dark box — no network delay or loss |
-| Quinn et al. (2025) | Coupled oscillators flying real drones, leaderless | Needs an external tracking system; cheap onboard Wi-Fi untested |
+| Paper | Source | Contribution | Limitation |
+|-------|--------|-------------|------------|
+| Werner-Allen et al. (2005) | ACM SenSys 2005 | Reachback Firefly Algorithm, on real sensor nodes | Special low-power sensor radios |
+| Nazerian et al. (2024) | Nature Communications | Sync is far more efficient if each unit varies how strongly it reacts over time | Mainly theory; not tested on wireless devices |
+| Jin et al. (2024) | IEEE Transactions on Wireless Communications | Leaderless time sync for fast-moving drone networks, Doppler-corrected | Simulation only |
+| Namyar et al. (2025) | ACM SIGCOMM 2025 (Google) | Leaderless clock averaging across datacenter servers, ~10 ns | Wired datacenter network; not bio-inspired despite the name "Firefly" |
+| Quinn et al. (2025) | IEEE BalkanCom 2025 | Coupled oscillators flying real drones, leaderless | Needs an external tracking system; cheap onboard Wi-Fi untested |
 
 Full citations are on the References slide of the Phase 1 deck.
 
-**The gap in one sentence:** every demonstration used specialised or costly
-hardware; none tested a cheap everyday Wi-Fi board like the ESP32.
+**The gap in one sentence:** leaderless sync has been shown in theory, in
+drone simulations, in wired datacenters and on special radios, but not on
+cheap everyday Wi-Fi boards like the ESP32.
 
 ### Framing this honestly
 
