@@ -23,3 +23,6 @@ desktop.ini
 build/
 *.bin
 *.elf
+
+# Wi-Fi credentials for the firmware (copy secrets.h.example -> secrets.h)
+firmware/**/secrets.h
