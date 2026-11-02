@@ -55,22 +55,22 @@ firefly-sync/
 ## Getting started
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate        # Windows
 pip install -r requirements.txt
-python scripts/run_sim.py     # Phase 1: virtual swarm only
+python -m pytest                                   # 46 tests
+python scripts/run_sim.py                          # virtual swarm in a window
+python scripts/fake_esp32.py                       # terminal 1: pretend ESP32
+python scripts/run_live.py --peer 127.0.0.1        # terminal 2: swarm + "ESP32"
 ```
+
+With the real board, see `docs/DEMO.md`.
 
 ## Status
 
-Planning stage. No code written yet — every module is a stub describing what
-goes in it. Read `docs/PLAN.md` before writing anything.
-
 | Phase | What it delivers | State |
 |-------|------------------|-------|
-| 0 | Wi-Fi round-trip latency test (the risk check) | not started |
-| 1 | Virtual swarm that synchronizes, on screen | not started |
-| 2 | Real ESP32 + LED joins the swarm over Wi-Fi | not started |
+| 0 | Wi-Fi round-trip latency test (the risk check) | done - ESP32 connects over hotspot |
+| 1 | Virtual swarm that synchronizes, on screen | done |
+| 2 | Real ESP32 + LED joins the swarm over Wi-Fi | built and tested with a simulated ESP32; hardware test next |
 | 3 | Reachback algorithm, experiments, graphs | not started |
 
 ## Licence
