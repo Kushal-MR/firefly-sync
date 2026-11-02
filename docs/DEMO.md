@@ -3,6 +3,17 @@
 Everything on the software side is built and tested. This is the checklist
 for getting the real ESP32 into the swarm.
 
+**Shortcut:** in the repo folder, double-click
+
+| File | Runs |
+|---|---|
+| `run_sim.bat` | the virtual swarm only (first run also sets up `.venv`) |
+| `demo_fake_esp32.bat` | swarm + a pretend ESP32 - no hardware needed |
+| `demo_esp32.bat` | swarm + the real ESP32 - asks for its IP |
+
+They use `.venv\Scripts\python.exe` directly, so there is nothing to
+activate. The steps below are what they do, by hand.
+
 ## 0. Laptop setup (once, ~5 min)
 
 ```

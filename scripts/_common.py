@@ -18,7 +18,8 @@ def swarm_args(desc):
     ap.add_argument("--range", type=float, default=9.0, dest="radio_range",
                     help="radio range in metres (0 = everyone hears everyone)")
     ap.add_argument("--area", default="20x12", help="floor plan size in metres, WxH")
-    ap.add_argument("--seed", type=int, default=None, help="fix the random layout/start")
+    ap.add_argument("--seed", type=int, default=3,
+                    help="layout + start (3 = known-good demo layout, ~8 s to sync)")
     ap.add_argument("--dt", type=float, default=0.002, help="simulation step in seconds")
     ap.add_argument("--no-window", action="store_true", help="run without the pygame window")
     ap.add_argument("--seconds", type=float, default=None, help="stop after this long")
