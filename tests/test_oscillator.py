@@ -54,9 +54,18 @@ def test_tiny_dissipation_behaves_like_a_plain_jump():
     assert o.phase == pytest.approx(0.4, abs=1e-4)
 
 
+def test_flashes_during_refractory_window_are_ignored():
+    o = Oscillator(phase=0.02, refractory=0.05)
+    assert o.on_neighbour_fired() is False
+    assert o.phase == 0.02
+    o.scramble(0.3)
+    o.on_neighbour_fired()
+    assert o.phase > 0.3
+
+
 @pytest.mark.parametrize("kwargs", [
     {"period": 0}, {"coupling": 0}, {"coupling": 1.0},
-    {"phase": 1.0}, {"phase": -0.1}, {"dissipation": 0},
+    {"phase": 1.0}, {"phase": -0.1}, {"dissipation": 0}, {"refractory": 0.5},
 ])
 def test_rejects_bad_settings(kwargs):
     with pytest.raises(ValueError):

@@ -22,12 +22,17 @@ lopsided pull is why the group locks into one rhythm.
 
 `dissipation` sets how strongly the curve bends. Near 0 it is a straight
 line, and the nudge becomes a plain fixed jump in phase.
+
+`refractory` is a short "just flashed, ignore everything" window at the start
+of each cycle, as a fraction of the period. Real fireflies have one. On a real
+network it also stops echoes: when a node fires, its neighbours' answering
+flashes arrive a little late and would otherwise shove it forward again.
 """
 import math
 
 
 class Oscillator:
-    def __init__(self, period=1.0, coupling=0.1, phase=0.0, dissipation=3.0):
+    def __init__(self, period=1.0, coupling=0.1, phase=0.0, dissipation=3.0, refractory=0.0):
         if period <= 0:
             raise ValueError("period must be positive")
         if not 0.0 < coupling < 1.0:
@@ -36,9 +41,12 @@ class Oscillator:
             raise ValueError("phase must be in [0, 1)")
         if dissipation <= 0:
             raise ValueError("dissipation must be positive (use a small value like 1e-6 for linear)")
+        if not 0.0 <= refractory < 0.5:
+            raise ValueError("refractory must be in [0, 0.5)")
         self.period = period
         self.coupling = coupling
         self.dissipation = dissipation
+        self.refractory = refractory
         self._phase = float(phase)
 
     @property
@@ -76,13 +84,22 @@ class Oscillator:
         call this three times: Mirollo-Strogatz applies every pulse.
         A nudge never wraps past the threshold - it fires and resets to 0,
         so a firefly can never skip a whole cycle.
+        Flashes that arrive during the refractory window are ignored.
         """
+        if self._phase < self.refractory:
+            return False
         charge = self._charge(self._phase) + self.coupling
         if charge >= 1.0:
             self._phase = 0.0
             return True
         self._phase = self._phase_of(charge)
         return False
+
+    def scramble(self, phase):
+        """Jump straight to a given phase (used to knock a node out of sync)."""
+        if not 0.0 <= phase < 1.0:
+            raise ValueError("phase must be in [0, 1)")
+        self._phase = float(phase)
 
     def __repr__(self):
         return f"Oscillator(phase={self._phase:.3f}, coupling={self.coupling}, period={self.period})"
