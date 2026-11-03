@@ -33,7 +33,7 @@ const char* NODE_ID     = "esp32-1";      // must match run_live.py --node-id
 // ---- Hardware ------------------------------------------------------------
 const uint16_t PORT       = 4210;
 const int      LED_PIN    = 2;            // built-in LED on most DevKit boards
-const int      BOOT_PIN   = 0;            // the BOOT button
+const int      FIRE_BUTTON_PIN = 0;               // the BOOT button
 const uint32_t FLASH_MS   = 80;
 
 WiFiUDP udp;
@@ -82,7 +82,7 @@ void onNeighbourFired() {
 void setup() {
   Serial.begin(115200);
   pinMode(LED_PIN, OUTPUT);
-  pinMode(BOOT_PIN, INPUT_PULLUP);
+  pinMode(FIRE_BUTTON_PIN, INPUT_PULLUP);
 
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
@@ -137,7 +137,7 @@ void loop() {
   }
 
   // 4. BOOT button: knock it out of sync for the demo.
-  if (digitalRead(BOOT_PIN) == LOW && millis() - lastButton > 500) {
+  if (digitalRead(FIRE_BUTTON_PIN) == LOW && millis() - lastButton > 500) {
     lastButton = millis();
     phase = randomPhase();
     Serial.println("Scrambled! Watch it pull back into sync.");
