@@ -16,6 +16,8 @@ from fireflysync import metrics
 FLASH_SECONDS = 0.12          # how long a flash stays lit on screen
 SAMPLE_EVERY = 0.05           # seconds between sync-level samples
 HISTORY_SECONDS = 30
+SYNC_THRESHOLD = 0.95         # sync level that counts as "synchronized"
+SYNC_HOLD = 2.0               # ...if it stays there this long
 
 
 class Session:
@@ -32,6 +34,9 @@ class Session:
         self.times, self.levels = [], []
         self.real_offsets = deque(maxlen=20)        # ms, recent ESP32 flashes
         self.paused = False
+        self.epoch_start = 0.0                      # start, or the last scramble
+        self.synced_after = None                    # seconds from epoch_start to sync
+        self._above_since = None
         self._next_sample = 0.0
         self._next_hello = 0.0
         self._ext_neighbours = set(swarm.neighbours_of(external_index)) if external_index is not None else set()
@@ -72,6 +77,24 @@ class Session:
             self.times.append(self.swarm.time)
             self.levels.append(lvl)
             self._next_sample = self.swarm.time + SAMPLE_EVERY
+            self._track_sync(lvl)
+
+    def _track_sync(self, lvl):
+        t = self.swarm.time
+        if lvl >= SYNC_THRESHOLD:
+            if self._above_since is None:
+                self._above_since = t
+            if self.synced_after is None and t - self._above_since >= SYNC_HOLD:
+                self.synced_after = self._above_since - self.epoch_start
+        else:
+            self._above_since = None
+
+    def scramble(self):
+        """Knock every virtual drone out of sync and restart the sync clock."""
+        self.swarm.scramble()
+        self.epoch_start = self.swarm.time
+        self.synced_after = None
+        self._above_since = None
 
     def _write(self, t, node, kind, offset):
         if self._log:
@@ -106,7 +129,7 @@ class Session:
                     if action == "pause":
                         self.paused = not self.paused
                     if action == "scramble":
-                        self.swarm.scramble()
+                        self.scramble()
                 if self.paused:
                     backlog = 0.0
                     if self.link:
@@ -133,6 +156,13 @@ class Session:
             return None
         recent = list(self.real_offsets)[-5:]
         return sum(recent) / len(recent)
+
+    def flash_intensity(self, node, fade=0.35):
+        """1.0 at the instant a node fires, fading to 0 over `fade` seconds."""
+        t = self.last_fire.get(node)
+        if t is None:
+            return 0.0
+        return max(0.0, 1.0 - (self.swarm.time - t) / fade)
 
     def is_flashing(self, node):
         t = self.last_fire.get(node)
