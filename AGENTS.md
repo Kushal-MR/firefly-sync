@@ -94,3 +94,72 @@ python scripts/run_sim.py --no-window --seconds 30
 Real flying drones, 3D graphics, machine learning, web or mobile apps,
 optical/light-sensor coupling. Phase 3 (Reachback + the four experiments in
 `docs/EXPERIMENTS.md` + figures) comes first.
+
+
+## Progress Update — Automatic ESP32 IP Discovery
+
+### Completed
+- Successfully cloned and configured the FireSync repository on Windows.
+- Created and tested the Python virtual environment.
+- Successfully launched the 20-drone simulation using `run_sim.bat`.
+- Successfully tested the fake ESP32 using `demo_fake_esp32.bat`.
+- Configured the physical ESP32 and verified GPIO2 LED blinking.
+- Connected the ESP32 and laptop to the same 2.4 GHz mobile hotspot.
+- Completed the UDP latency test:
+  - 100/100 replies, 0% packet loss.
+  - Median RTT: 51.3 ms.
+  - 95th percentile RTT: 69.6 ms.
+  - Estimated one-way latency: 25.7 ms.
+  - Verdict: USABLE.
+- Successfully launched `demo_esp32.bat` with the physical ESP32.
+- ESP32 reported hearing 18 of 20 virtual drones.
+- Created Git branch: `feature/auto-esp32-discovery`.
+- Preserved the existing firmware modification (`BOOT_PIN` renamed to `FIRE_BUTTON_PIN`).
+- Created a local firmware backup: `firmware/esp32_firefly/esp32_firefly_backup.ino`.
+
+### Current Task — Automatic ESP32 Discovery
+
+Goal: Eliminate manual ESP32 IP address entry when launching the live demo.
+
+Current implementation requires:
+- `demo_esp32.bat` to request the ESP32 IP manually.
+- `scripts/run_live.py` to receive the IP through `--peer`.
+- `fireflysync/link.py` to communicate with a previously known peer.
+
+### Planned Changes
+
+1. **ESP32 firmware (`firmware/esp32_firefly/esp32_firefly.ino`)**
+   - Listen for `DISCOVER|esp32-1` on UDP port 4210.
+   - Respond with `DISCOVER_REPLY|esp32-1` to the requesting laptop.
+   - Preserve existing synchronization behavior.
+
+2. **Python networking (`fireflysync/link.py`)**
+   - Implement `discover_esp32()`.
+   - Broadcast discovery requests.
+   - Listen for ESP32 responses and identify its IP.
+   - Handle discovery timeouts.
+
+3. **Live runner (`scripts/run_live.py`)**
+   - Make `--peer` optional.
+   - Automatically discover the ESP32 if no IP is provided.
+
+4. **Launcher (`demo_esp32.bat`)**
+   - Remove the manual IP prompt.
+   - Retain the one-way latency input.
+
+### Implementation Requirements
+- Preserve the existing FIRE message format and synchronization algorithm.
+- Do not hardcode IP addresses.
+- Keep UDP ports consistent.
+- Do not break fake ESP32 functionality.
+- Never commit Wi-Fi credentials or `secrets.h`.
+- Test each modification incrementally.
+
+### Remaining Work
+- Implement and test UDP discovery.
+- Integrate discovery into the live runner and launcher.
+- Verify physical ESP32 synchronization and LED behavior.
+- Retest fake ESP32 functionality.
+- Commit changes and open a pull request into `main` after successful testing.
+
+**Current status:** Feature branch created; automatic discovery implementation has not yet been completed.
