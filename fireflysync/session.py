@@ -71,14 +71,17 @@ class Session:
         return 0.0
 
     def _led_position(self, k):
-        """Small sunflower spiral, left of centre (in the left room if walls go up)."""
+        """LEDs sit on a small 3-wide grid like the board itself, left of centre
+        (so they stay in room A when the wall goes up)."""
         w, h = self.swarm.area
-        r, a = 0.6 * math.sqrt(k), k * 2.39996
-        return (w / 2 - 1.8 + r * math.cos(a), h / 2 + r * math.sin(a))
+        col, row = k % 3, k // 3
+        return (w / 2 - 3.8 + 1.2 * col, h / 2 - 1.8 + 1.2 * row)
 
     def _ensure_led(self, name):
         if name not in self.exts:
-            self.exts[name] = self.swarm.add_external(name, self._led_position(len(self.exts)))
+            num = name.rsplit("L", 1)[-1]                  # esp32-L3 -> slot 2, in order
+            slot = int(num) - 1 if num.isdigit() and int(num) > 0 else len(self.exts)
+            self.exts[name] = self.swarm.add_external(name, self._led_position(slot))
             self.real_offsets[name] = deque(maxlen=10)
         return self.exts[name]
 

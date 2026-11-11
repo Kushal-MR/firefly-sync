@@ -9,6 +9,9 @@ or a projector. Resize the window, or press F, and everything rescales.
 
 Keys:  R scramble   SPACE pause   L radio links   F fullscreen
        S save screenshot   ESC quit
+Scenarios (the session changes the swarm, this file only sends the key):
+       W walls   D doorway   X rogue drones   C clock drift
+       M moving drones   P packet loss
 """
 import datetime
 import math
@@ -37,6 +40,11 @@ GOOD = (52, 211, 153)
 WARN = (251, 191, 36)
 BAD = (248, 113, 113)
 DRONE = (118, 130, 168)
+ROGUE = (239, 68, 68)
+WALL = (196, 206, 230)
+
+SCENARIO_KEYS = {pygame.K_w: "walls", pygame.K_d: "door", pygame.K_x: "rogue",
+                 pygame.K_c: "drift", pygame.K_m: "move", pygame.K_p: "loss"}
 
 DESIGN_W, DESIGN_H = 1280, 720          # every size below is for this window
 SANS = "segoeui,helveticaneue,dejavusans,arial"
@@ -76,7 +84,7 @@ class View:
         self._scale = None
         self._toasts = []                           # (text, colour, until_wall_time)
         self._seen_sync = None
-        self._seen_esp32 = False
+        self._seen_leds = 0
         self._shot_request = False
         self._rescale()
 
@@ -130,8 +138,9 @@ class View:
                 if e.key == pygame.K_SPACE:
                     return "pause"
                 if e.key == pygame.K_r:
-                    self.toast("Scrambled - watch them re-sync", AMBER)
                     return "scramble"
+                if e.key in SCENARIO_KEYS:
+                    return SCENARIO_KEYS[e.key]
                 if e.key == pygame.K_l:
                     self.show_links = not self.show_links
                 if e.key == pygame.K_f:
@@ -148,7 +157,7 @@ class View:
             self.screen = pygame.display.set_mode(self.windowed_size, pygame.RESIZABLE)
         self._rescale()
 
-    def toast(self, text, colour=TEXT, seconds=2.8):
+    def toast(self, text, colour=AMBER, seconds=2.8):
         self._toasts.append((text, colour, pygame.time.get_ticks() / 1000 + seconds))
 
     # ======================================================================
@@ -284,10 +293,11 @@ class View:
         if session.synced_after is not None and self._seen_sync != session.epoch_start:
             self._seen_sync = session.epoch_start
             self.toast(f"Swarm synchronized in {session.synced_after:.1f} s", GOOD)
-        heard = session.link is not None and session.link.last_heard is not None
-        if heard and not self._seen_esp32:
-            self._seen_esp32 = True
-            self.toast("ESP32 joined the swarm", TEAL)
+        n = len(session.exts)
+        if n > self._seen_leds:
+            if self._seen_leds == 0:
+                self.toast("ESP32 joined the swarm", TEAL)
+            self._seen_leds = n
 
     def _blink(self):
         return (pygame.time.get_ticks() // 500) % 2 == 0
@@ -308,7 +318,7 @@ class View:
         live = session.link is not None
         colour = TEAL if live else AMBER
         dot = colour
-        if live and session.link.last_heard is None:
+        if live and not session.exts:
             dot = WARN if self._blink() else FAINT
         box = self._pill("LIVE  ·  ESP32" if live else "SIMULATION", colour,
                          (W - gap - u(4), cy), dot=dot)
@@ -320,8 +330,10 @@ class View:
         u = self.u
         sw = session.swarm
         aw, ah = sw.area
-        self._card(rect, f"Floor plan  ·  {aw:g} × {ah:g} m",
-                   f"{sw.n_virtual} virtual drones" + ("  +  1 real" if session.ext is not None else ""))
+        rng = "all hear all" if sw.radio_range is None else f"radio range {sw.radio_range:g} m"
+        right = f"{sw.n_virtual} drones" + (f"  +  {len(session.exts)} real LEDs" if session.exts else "")
+        right += f"  ·  {rng}  ·  coupling {sw.oscillators[0].coupling:g}"
+        self._card(rect, f"Floor plan  ·  {aw:g} × {ah:g} m", right)
         inner = pygame.Rect(rect.x + u(32), rect.y + u(50), rect.w - u(64), rect.h - u(96))
         scale = min(inner.w / aw, inner.h / ah)
         ox = inner.x + (inner.w - aw * scale) / 2
@@ -339,7 +351,11 @@ class View:
             pygame.draw.line(self.screen, GRID_MAJOR if m % 5 == 0 else GRID, (plan.x, y), (plan.right, y))
         pygame.draw.rect(self.screen, BORDER, plan, 1)
 
+        if sw.walls_on:
+            self._walls(sw, plan, P)
+
         pts = [P(p) for p in sw.positions]
+        leds = list(session.exts.values())
 
         # links and radio range stay inside the plan
         self.screen.set_clip(plan.inflate(2, 2))
@@ -348,25 +364,31 @@ class View:
                 for j in near:
                     if j > i:
                         pygame.draw.aaline(self.screen, (40, 52, 84), pts[i], pts[j])
-        if session.ext is not None:
-            e = session.ext
+        if leds:
             if sw.radio_range:
-                self._dashed_circle(pts[e], sw.radio_range * scale, TEAL_DIM)
-            e_int = session.flash_intensity(e)
+                cx = sum(pts[e][0] for e in leds) / len(leds)
+                cy = sum(pts[e][1] for e in leds) / len(leds)
+                self._dashed_circle((cx, cy), sw.radio_range * scale, TEAL_DIM)
             lw = u(1.4)
-            for j in sw.neighbours[e]:
-                a = max(session.flash_intensity(j), e_int) * 160
-                self._alpha_line(pts[e], pts[j], TEAL, a, lw)
+            for e in leds:
+                e_int = session.flash_intensity(e)
+                for j in sw.neighbours[e]:
+                    if j < sw.n_virtual:
+                        a = max(session.flash_intensity(j), e_int) * 110
+                        self._alpha_line(pts[e], pts[j], TEAL, a, lw)
 
         # drones may overhang the plan edge, but never leave the card
         self.screen.set_clip(rect.inflate(-4, -4))
         gr = self._glow_r
         for i, p in enumerate(pts):
-            real = i in sw.external_names
             inten = session.flash_intensity(i)
             if inten > 0:
                 self.screen.blit(self._glow[min(15, int(inten * 15))], (p[0] - gr, p[1] - gr))
-            self._drone(p, inten, real, sw.phase_of(i))
+            name = sw.external_names.get(i)
+            if name is not None:
+                self._led(p, inten, name)
+            else:
+                self._drone(p, inten, i in sw.rogues, sw.phase_of(i))
         self.screen.set_clip(None)
 
         # scale bar + legend
@@ -375,23 +397,57 @@ class View:
         pygame.draw.line(self.screen, MUTED, (sx, sy), (sx + 5 * scale, sy), lw)
         for x in (sx, sx + 5 * scale):
             pygame.draw.line(self.screen, MUTED, (x, sy - u(4)), (x, sy + u(4)), lw)
-        lab = self._text("5 m", "small", MUTED, (sx + 5 * scale + u(8), sy), "midleft")
-        if session.ext is not None and sw.radio_range:
-            lx = lab.right + u(24)
-            self._dashed_circle((lx + u(7), sy), u(6), TEAL_DIM, dashes=12)
-            self._text(f"ESP32 radio range ({sw.radio_range:g} m)", "small", MUTED, (lx + u(20), sy), "midleft")
+        x = self._text("5 m", "small", MUTED, (sx + 5 * scale + u(8), sy), "midleft").right + u(24)
+        if leds and sw.radio_range:
+            self._dashed_circle((x + u(7), sy), u(6), TEAL_DIM, dashes=12)
+            x = self._text("ESP32 radio range", "small", MUTED, (x + u(20), sy), "midleft").right + u(24)
+        if leds:
+            self._aa_circle((x + u(6), sy), u(6), TEAL)
+            x = self._text("real LED", "small", MUTED, (x + u(18), sy), "midleft").right + u(24)
+        if sw.rogues:
+            self._aa_circle((x + u(6), sy), u(6), ROGUE)
+            x = self._text("rogue (faulty) drone", "small", MUTED, (x + u(18), sy), "midleft").right + u(24)
 
-    def _drone(self, c, inten, real, phase):
+    def _walls(self, sw, plan, P):
         u = self.u
-        size = u(11) if real else u(8)
-        base = TEAL if real else DRONE
+        width = u(5)
+        for a, b in sw.walls:
+            pygame.draw.line(self.screen, WALL, P(a), P(b), width)
+        x = P((sw.area[0] / 2, 0))[0]
+        if sw.door_open:
+            ys = sorted(pt[1] for seg in sw.walls for pt in seg)
+            lo, hi = P((0, ys[1]))[1], P((0, ys[2]))[1]       # the gap between the two segments
+            dash = u(5)
+            y = lo
+            while y < hi:
+                pygame.draw.line(self.screen, GOOD, (x, y), (x, min(y + dash, hi)), u(2))
+                y += 2 * dash
+            self._text("doorway", "tiny", GOOD, (x + u(8), (lo + hi) / 2), "midleft")
+        for frac, label in ((0.25, "ROOM A"), (0.75, "ROOM B")):
+            self._text(label, "tiny", FAINT, (plan.x + frac * plan.w, plan.y + u(8)), "midtop")
+
+    def _led(self, c, inten, name):
+        """A real LED on the ESP32: a bulb, lit when it flashes."""
+        u = self.u
+        r = u(9)
+        col = _lerp(TEAL, (255, 244, 200), inten) if inten > 0 else TEAL_DIM
+        self._aa_circle(c, r + u(3), CARD)
+        self._ring(c, r + u(2), max(1, u(1.5)), TEAL)
+        self._aa_circle(c, r - u(1), col)
+        label = name.split("-")[-1]                         # esp32-L3 -> L3
+        self._text(label, "tiny", TEAL, (c[0], c[1] + r + u(5)), "midtop")
+
+    def _drone(self, c, inten, rogue, phase):
+        u = self.u
+        size = u(8)
+        base = ROGUE if rogue else DRONE
         col = _lerp(base, (255, 236, 170), inten) if inten > 0 else base
         ring_r = size + u(9)
         lw = u(2)
         # phase ring: the firefly's "timer" filling up
-        self._ring(c, ring_r, max(1, u(1)), (34, 44, 70))
+        self._ring(c, ring_r, max(1, u(1)), (70, 30, 36) if rogue else (34, 44, 70))
         if phase is not None and phase > 0.01:
-            pygame.draw.lines(self.screen, TEAL if real else (98, 118, 168), False,
+            pygame.draw.lines(self.screen, ROGUE if rogue else (98, 118, 168), False,
                               self._arc_points(c, ring_r, phase, 48), lw)
         # arms and rotors
         arm = size * 0.95
@@ -401,8 +457,6 @@ class View:
             rr = max(3, size // 2 - 1)
             self._ring(end, rr, max(1, u(1.2)), col)
         self._aa_circle(c, max(3, size // 3 + 1), col)
-        if real:
-            self._text("ESP32", "tiny", TEAL, (c[0], c[1] + ring_r + u(6)), "midtop")
 
     # ----- sidebar ----------------------------------------------------------
     def _sidebar(self, session, rect, gap):
@@ -412,17 +466,19 @@ class View:
         self._sync_card(session, pygame.Rect(rect.x, rect.y, half, top_h))
         self._phase_card(session, pygame.Rect(rect.x + half + gap, rect.y, rect.w - half - gap, top_h))
         y = rect.y + top_h + gap
-        mid_h = u(112)
-        if session.ext is not None:
-            self._esp32_card(session, pygame.Rect(rect.x, y, rect.w, mid_h))
-        else:
-            self._params_card(session, pygame.Rect(rect.x, y, rect.w, mid_h))
-        y += mid_h + gap
+        sc_h = u(118)
+        self._scenario_card(session, pygame.Rect(rect.x, y, rect.w, sc_h))
+        y += sc_h + gap
+        if session.link is not None:
+            esp_h = u(112)
+            self._esp32_card(session, pygame.Rect(rect.x, y, rect.w, esp_h))
+            y += esp_h + gap
         self._graph_card(session, pygame.Rect(rect.x, y, rect.w, rect.bottom - y))
 
     def _sync_card(self, session, r):
         u = self.u
-        self._card(r, "Swarm sync")
+        n_rh = session.rhythms()
+        self._card(r, "Swarm sync", f"{n_rh} rhythm{'s' if n_rh != 1 else ''}")
         lvl = session.sync_level()
         col = _level_colour(lvl)
         c = (r.centerx, r.y + u(98))
@@ -431,7 +487,8 @@ class View:
         self._thick_arc(c, R, width, lvl, col)
         self._text(f"{100 * lvl:.0f}%", "num", TEXT, c, "center")
         if session.synced_after is not None:
-            msg, mc = f"Synced in {session.synced_after:.1f} s", GOOD
+            cyc = metrics.cycles(session.synced_after, session.swarm.period)
+            msg, mc = f"Synced in {session.synced_after:.1f} s  ·  {cyc:.0f} cycles", GOOD
         else:
             msg, mc = "Synchronizing…", MUTED
         self._text(msg, "small", mc, (r.centerx, r.bottom - u(14)), "midbottom")
@@ -446,16 +503,17 @@ class View:
         top = (c[0], c[1] - R)
         pygame.draw.line(self.screen, AMBER, (top[0], top[1] - u(6)), (top[0], top[1] + u(6)), u(2))
         self._text("flash", "tiny", AMBER, (top[0] + u(8), top[1] - u(6)), "bottomleft")
-        phases = sw.virtual_phases
-        for i, ph in enumerate(phases):
+        for i, ph in enumerate(sw.virtual_phases):
             a = -math.pi / 2 + 2 * math.pi * ph
             p = (c[0] + R * math.cos(a), c[1] + R * math.sin(a))
-            self._aa_circle(p, u(4), _lerp((130, 145, 190), AMBER, session.flash_intensity(i)))
-        if session.ext is not None:
-            ph = sw.phase_of(session.ext)
+            base = ROGUE if i in sw.rogues else (130, 145, 190)
+            self._aa_circle(p, u(4), _lerp(base, AMBER, session.flash_intensity(i)))
+        for e in session.exts.values():
+            ph = sw.phase_of(e)
             if ph is not None:
                 a = -math.pi / 2 + 2 * math.pi * ph
-                self._aa_circle((c[0] + R * math.cos(a), c[1] + R * math.sin(a)), u(6), TEAL)
+                self._aa_circle((c[0] + R * math.cos(a), c[1] + R * math.sin(a)), u(5), TEAL)
+        phases = sw.healthy_phases
         lvl = metrics.order_parameter(phases)
         mean = metrics.circular_mean(phases)
         a = -math.pi / 2 + 2 * math.pi * mean
@@ -464,44 +522,67 @@ class View:
         self._aa_circle(c, u(3), MUTED)
         self._text("arrow length = sync", "small", FAINT, (r.centerx, r.bottom - u(12)), "midbottom")
 
+    def _scenario_card(self, session, r):
+        """The six experiments, each one key away."""
+        u = self.u
+        self._card(r, "Scenarios", "press a key to switch")
+        items = session.scenarios()
+        cols, pad = 3, u(16)
+        cw = (r.w - 2 * pad) // cols
+        for k, (key, name, state, active) in enumerate(items):
+            x = r.x + pad + (k % cols) * cw
+            y = r.y + u(40) + (k // cols) * u(38)
+            cap = self.f("tiny").render(key, True, BG if active else TEXT)
+            box = pygame.Rect(x, y, u(24), u(24))
+            pygame.draw.rect(self.screen, AMBER if active else CARD_2, box, border_radius=u(5))
+            pygame.draw.rect(self.screen, AMBER if active else BORDER, box, 1, border_radius=u(5))
+            self.screen.blit(cap, cap.get_rect(center=box.center))
+            self._text(name, "small", TEXT if active else MUTED, (box.right + u(8), y - u(2)))
+            self._text(state, "tiny", AMBER if active else FAINT, (box.right + u(8), y + u(14)))
+
     def _esp32_card(self, session, r):
         u = self.u
         link = session.link
-        heard = link is not None and link.last_heard is not None
-        self._card(r, "Real drone  ·  ESP32",
-                   f"hears {len(session._ext_neighbours)} drones  ·  rx {link.received}  tx {link.sent}" if link else None)
+        right = None if link.oneway_ms is None else f"Wi-Fi delay {link.oneway_ms:.0f} ms"
+        self._card(r, "Real drone  ·  ESP32", right)
         x, y = r.x + u(16), r.y + u(40)
-        if not heard:
+        if not session.exts:
             self._aa_circle((x + u(6), y + u(20)), u(6), WARN if self._blink() else FAINT)
-            self._text("Waiting for ESP32…", "head", TEXT, (x + u(22), y + u(20)), "midleft")
-            self._text("Same 2.4 GHz hotspot?  Right IP?  Firewall allows Python?",
-                       "small", MUTED, (x + u(22), y + u(46)), "midleft")
+            if link.peer is None:
+                self._text("Searching for the ESP32…", "head", TEXT, (x + u(22), y + u(20)), "midleft")
+                hint = "Same 2.4 GHz hotspot as the ESP32?  Is it powered?"
+            else:
+                self._text("ESP32 found - waiting for its first flash", "head", TEXT,
+                           (x + u(22), y + u(20)), "midleft")
+                hint = "Stuck here? Allow Python in the Windows firewall."
+            self._text(hint, "small", MUTED, (x + u(22), y + u(46)), "midleft")
             return
-        off = session.esp32_offset()
-        stale = session.swarm.time - link.last_heard > 3
-        self._aa_circle((x + u(6), y + u(20)), u(6), BAD if stale else GOOD)
-        self._text("Signal lost" if stale else "Connected", "head", TEXT, (x + u(22), y + u(20)), "midleft")
-        self._text("off-beat vs swarm", "small", MUTED, (x + u(22), y + u(46)), "midleft")
-        if off is not None:
-            a = abs(off)
-            col = GOOD if a < 30 else WARN if a < 100 else BAD
-            verdict = "in sync" if a < 30 else "locking on…" if a < 100 else "off-beat"
-            self._text(f"{off:+.0f} ms", "big", col, (r.right - u(16), y + u(2)), "topright")
-            self._text(verdict, "small", col, (r.right - u(16), y + u(46)), "topright")
-
-    def _params_card(self, session, r):
-        u = self.u
-        sw = session.swarm
-        self._card(r, "Model  ·  Mirollo-Strogatz pulse-coupled oscillators")
-        items = [("Drones", f"{sw.n_virtual}"),
-                 ("Period", f"{sw.period:g} s"),
-                 ("Coupling", f"{sw.oscillators[0].coupling:g}"),
-                 ("Radio range", "all" if sw.radio_range is None else f"{sw.radio_range:g} m")]
-        cw = (r.w - u(32)) // len(items)
-        for k, (label, val) in enumerate(items):
-            x = r.x + u(16) + k * cw
-            self._text(val, "num" if len(val) < 6 else "head", TEXT, (x, r.y + u(42)))
-            self._text(label, "small", MUTED, (x, r.y + u(82)))
+        stale = link.last_heard is None or session.swarm.time - link.last_heard > 3
+        ok, n = session.leds_in_sync()
+        offs = session.led_offsets()
+        if stale:
+            col, verdict = BAD, "signal lost"
+        else:
+            col = GOOD if ok == n else WARN
+            verdict = "all in sync" if ok == n else "locking on…"
+        self._text(f"{ok}/{n}", "big", col, (x, y))
+        self._text(f"LEDs in sync  ·  {verdict}", "small", col, (x, y + u(46)))
+        # one bulb per LED, coloured by how far it is from the swarm's beat
+        bx = r.right - u(16)
+        for name in sorted(offs, key=lambda s: int(s.split("L")[-1]) if s.split("L")[-1].isdigit() else 0,
+                           reverse=True):
+            a = abs(offs[name])
+            c = GOOD if a < 30 else WARN if a < 100 else BAD
+            inten = session.flash_intensity(session.exts[name])
+            cx = bx - u(12)
+            self._aa_circle((cx, y + u(14)), u(10), _lerp(c, (255, 244, 200), inten) if inten else c)
+            self._text(name.split("-")[-1], "tiny", MUTED, (cx, y + u(30)), "midtop")
+            bx -= u(32)
+        avg = session.esp32_offset()
+        if avg is not None:
+            where = f"  ·  {link.peer[0]}" if link.peer else ""
+            self._text(f"avg {avg:+.0f} ms{where}", "small", FAINT,
+                       (r.right - u(16), y + u(46)), "topright")
 
     def _graph_card(self, session, r):
         u = self.u
@@ -541,6 +622,8 @@ class View:
         for key, label in (("R", "Scramble"), ("SPACE", "Pause"), ("L", "Radio links"),
                            ("F", "Fullscreen"), ("S", "Screenshot"), ("ESC", "Quit")):
             x = self._keycap(x, y, key, label)
+        self._text("W D X C M P  =  scenarios", "small", FAINT,
+                   (self.screen.get_width() - gap - self.u(4), y + self.u(11)), "midright")
 
     def _draw_toasts(self, floor):
         u = self.u
