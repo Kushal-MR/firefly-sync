@@ -24,12 +24,28 @@ def swarm_args(desc):
     ap.add_argument("--no-window", action="store_true", help="run without the pygame window")
     ap.add_argument("--seconds", type=float, default=None, help="stop after this long")
     ap.add_argument("--log", action="store_true", help="save every flash to data/*.csv")
+    sc = ap.add_argument_group("scenarios (also switchable live with keys)")
+    sc.add_argument("--walls", action="store_true", help="wall splits the floor into two rooms (W)")
+    sc.add_argument("--door-open", action="store_true", help="open the doorway in the wall (D)")
+    sc.add_argument("--rogues", type=int, default=0, help="number of faulty drones firing at random (X)")
+    sc.add_argument("--drift", type=float, default=0.0, help="clock drift std, e.g. 0.02 = ±2%% (C)")
+    sc.add_argument("--move", type=float, default=0.0, dest="speed", help="drone speed in m/s (M)")
+    sc.add_argument("--loss", type=float, default=0.0, help="fraction of flashes lost, e.g. 0.3 (P)")
     return ap
 
 
 def parse_area(s):
     w, h = s.lower().split("x")
     return float(w), float(h)
+
+
+def make_swarm(args):
+    from fireflysync.swarm import Swarm
+    return Swarm(args.drones, period=args.period, coupling=args.coupling,
+                 dissipation=args.dissipation, refractory=args.refractory,
+                 radio_range=args.radio_range or None, area=parse_area(args.area), seed=args.seed,
+                 walls=args.walls, door_open=args.door_open, loss=args.loss, drift=args.drift,
+                 speed=args.speed, rogues=args.rogues)
 
 
 def log_path(prefix):

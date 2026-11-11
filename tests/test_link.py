@@ -43,3 +43,44 @@ def test_udp_round_trip_over_loopback():
     finally:
         link.close()
         peer.close()
+
+
+def test_parse_hello():
+    from fireflysync.link import parse_hello
+    assert parse_hello(b"HELLO|esp32|6") == 6
+    for junk in [b"HELLO|laptop", b"HELLO|esp32|x", b"FIRE|a|1|0", b"\xff"]:
+        assert parse_hello(junk) is None
+
+
+def _wait(link, pred, now=0.0, timeout=2.0):
+    end = time.time() + timeout
+    got = []
+    while time.time() < end:
+        got += link.poll(now)
+        if pred(got):
+            return got
+        time.sleep(0.01)
+    return got
+
+
+def test_discovery_from_hello_then_ping_measures_delay():
+    esp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    esp.bind(("127.0.0.1", 0))
+    esp.settimeout(2)
+    link = UdpLink(None, esp.getsockname()[1], listen_port=0)
+    try:
+        assert link.peer is None
+        link.send_fire("v1")                          # unknown peer: silently nothing
+        esp.sendto(b"HELLO|esp32|6", ("127.0.0.1", link.sock.getsockname()[1]))
+        _wait(link, lambda g: link.peer is not None)
+        assert link.discovered and link.announced_leds == 6
+        assert link.peer == ("127.0.0.1", esp.getsockname()[1])
+        link.send_ping()
+        data, addr = esp.recvfrom(64)
+        assert data.startswith(b"PING|")
+        esp.sendto(data, addr)                        # echo, like the firmware
+        _wait(link, lambda g: link.rtt_ms is not None)
+        assert link.oneway_ms is not None and link.oneway_ms >= 0
+    finally:
+        link.close()
+        esp.close()
