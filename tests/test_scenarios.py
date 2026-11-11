@@ -1,0 +1,104 @@
+"""Each scenario from the demo, locked in as a test."""
+import pytest
+
+from fireflysync import metrics
+from fireflysync.session import Session
+from fireflysync.swarm import Swarm
+
+
+def run(s, seconds, dt=0.002):
+    end = s.time + seconds
+    while s.time < end:
+        s.step(dt)
+
+
+def sync(s):
+    return metrics.order_parameter(s.healthy_phases)
+
+
+def test_everything_off_keeps_the_demo_layout_unchanged():
+    s = Swarm(20, radio_range=9.0, seed=3)
+    r = Session(s).run_headless(30, report_every=1e9)
+    assert r["time_to_sync_s"] == pytest.approx(7.67, abs=0.05)
+
+
+def test_closed_wall_splits_radio_into_two_rooms_and_door_merges_them():
+    s = Swarm(20, radio_range=9.0, seed=3, walls=True)
+    assert len(s.components()) == 2
+    run(s, 40)
+    assert metrics.rhythm_groups(s.healthy_phases) == 2
+    s.set_door(True)
+    assert len(s.components()) == 1
+    run(s, 60)
+    assert sync(s) > 0.95
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_open_door_connects_rooms_in_many_layouts(seed):
+    s = Swarm(20, radio_range=9.0, seed=seed, walls=True, door_open=True)
+    assert s.is_connected()
+
+
+@pytest.mark.parametrize("loss", [0.1, 0.3, 0.5])
+def test_swarm_still_syncs_with_lost_flashes(loss):
+    s = Swarm(20, radio_range=9.0, seed=3, loss=loss)
+    run(s, 60)
+    assert sync(s) > 0.95
+
+
+def test_loss_is_repeatable_with_a_seed():
+    a, b = Swarm(15, seed=5, loss=0.3), Swarm(15, seed=5, loss=0.3)
+    run(a, 10)
+    run(b, 10)
+    assert a.virtual_phases == b.virtual_phases
+
+
+@pytest.mark.parametrize("drift", [0.01, 0.02, 0.05])
+def test_swarm_holds_sync_despite_clock_drift(drift):
+    s = Swarm(20, radio_range=9.0, seed=3, drift=drift)
+    assert len({round(o.period, 6) for o in s.oscillators}) > 1     # clocks really differ
+    run(s, 60)
+    assert sync(s) > 0.95
+
+
+def test_drift_off_restores_identical_clocks():
+    s = Swarm(10, seed=1, drift=0.05)
+    s.set_drift(0.0)
+    assert {o.period for o in s.oscillators} == {1.0}
+
+
+def test_moving_drones_change_neighbours_and_stay_synced():
+    s = Swarm(20, radio_range=9.0, seed=3, speed=1.0)
+    before = [list(n) for n in s.neighbours]
+    run(s, 60)
+    assert [list(n) for n in s.neighbours] != before
+    assert sync(s) > 0.95
+
+
+def test_moving_drones_never_pass_through_a_closed_wall():
+    s = Swarm(20, radio_range=9.0, seed=3, walls=True, speed=2.0)
+    left = {i for i, (x, _) in enumerate(s.positions) if x < 10}
+    run(s, 30)
+    assert left == {i for i, (x, _) in enumerate(s.positions[:20]) if x < 10}
+
+
+@pytest.mark.parametrize("count", [1, 3])
+def test_a_few_rogues_cannot_break_a_synced_swarm(count):
+    s = Swarm(20, radio_range=9.0, seed=3)
+    run(s, 20)
+    s.set_rogues(count)
+    assert len(s.rogues) == count and len(s.healthy) == 20 - count
+    run(s, 40)
+    assert sync(s) > 0.9
+
+
+def test_rogues_ignore_everyone():
+    s = Swarm(5, seed=0)
+    s.set_rogues(1)
+    (r,) = s.rogues
+    s.oscillators[r].scramble(0.5)
+    others = [i for i in range(5) if i != r]
+    for i in others:
+        s.oscillators[i].scramble(0.999)
+    s.step(0.002)                          # everyone else fires
+    assert s.oscillators[r].phase == pytest.approx(0.502, abs=1e-6)

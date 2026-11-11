@@ -44,3 +44,14 @@ def test_time_to_sync_needs_to_hold():
 
 def test_time_to_sync_none_if_never():
     assert metrics.time_to_sync([0, 1, 2], [0.1, 0.2, 0.3]) is None
+
+
+def test_cycles_converts_seconds():
+    assert metrics.cycles(7.5, period=1.5) == 5.0
+    assert metrics.cycles(None, period=1.0) is None
+
+
+def test_rhythm_groups_counts_separate_clusters():
+    assert metrics.rhythm_groups([0.1, 0.11, 0.12]) == 1
+    assert metrics.rhythm_groups([0.1, 0.11, 0.6, 0.61]) == 2
+    assert metrics.rhythm_groups([0.99, 0.01, 0.02]) == 1        # wraps round

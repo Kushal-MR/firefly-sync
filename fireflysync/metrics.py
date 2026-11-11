@@ -68,3 +68,23 @@ def time_to_sync(times, levels, threshold=0.95, hold=3.0):
         else:
             start = None
     return None
+
+
+def cycles(seconds, period):
+    """A duration expressed in flash cycles."""
+    return None if seconds is None else seconds / period
+
+
+def rhythm_groups(phases, gap=0.08):
+    """How many separate rhythms the swarm has right now.
+
+    Phases are sorted round the circle; wherever two neighbours are more than
+    `gap` apart, a new group starts. 1 = one shared rhythm. Two rooms that
+    can't hear each other show up as 2.
+    """
+    ps = sorted(p % 1.0 for p in phases)
+    if len(ps) < 2:
+        return len(ps)
+    gaps = [b - a for a, b in zip(ps, ps[1:])] + [ps[0] + 1.0 - ps[-1]]
+    big = sum(1 for g in gaps if g > gap)
+    return max(1, big)
