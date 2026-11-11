@@ -1,95 +1,73 @@
-# Hardware day runbook
+# Demo runbook (for the evaluation)
 
-Everything on the software side is built and tested. This is the checklist
-for getting the real ESP32 into the swarm.
+About 6 minutes. Practise it once end to end the day before.
 
-**Shortcut:** in the repo folder, double-click
+## Before the teacher arrives
+
+- [ ] Phone hotspot on, **2.4 GHz**. Laptop joined to it.
+- [ ] ESP32 on a **power bank**, six LEDs blinking together.
+- [ ] Laptop plugged in to power, window on the projector.
+- [ ] `docs/results/fig_overview.png` open in another window.
+- [ ] Spare: `demo_fake_esp32.bat` works with no hardware at all, if the
+      Wi-Fi dies on the day.
+
+## Launchers (double-click, in the repo folder)
 
 | File | Runs |
 |---|---|
-| `run_sim.bat` | the virtual swarm only (first run also sets up `.venv`) |
-| `demo_fake_esp32.bat` | swarm + a pretend ESP32 - no hardware needed |
-| `demo_esp32.bat` | swarm + the real ESP32 - asks for its IP |
+| `run_sim.bat` | virtual swarm only (first run also sets up `.venv`) |
+| `demo_fake_esp32.bat` | swarm + a pretend ESP32 with 6 LEDs, no hardware |
+| `demo_esp32.bat` | swarm + the real ESP32, found automatically |
 
-They use `.venv\Scripts\python.exe` directly, so there is nothing to
-activate. The steps below are what they do, by hand.
+## The script
 
-## 0. Laptop setup (once, ~5 min)
+1. **The idea (30 s).** "Fireflies flash together with no leader. Each one
+   just nudges its own timer when it sees a neighbour flash. Indoor drones
+   have no GPS clock, so we gave them the firefly rule."
 
-```
-pip install -r requirements.txt
-python -m pytest
-```
+2. **Start `demo_esp32.bat`.** Card shows *Searching…* then *found*, the six
+   teal LEDs L1–L6 pop onto the floor plan. The ring climbs to 100 % and
+   turns green, *Synced in ~8 s · 8 cycles*. Point at the real LEDs
+   blinking in time with the screen. *6/6 LEDs in sync*.
 
-All tests should pass. If `pip install pygame` fails (very new Python
-versions), run `pip install pygame-ce` instead - same code, drop-in.
+3. **Press BOOT on the ESP32.** The six LEDs scatter, then pull back in.
+   "It recovers on its own - no reset, no leader."
 
-## 1. Try it with no hardware first (~2 min)
+4. **R** - scramble the whole virtual swarm. Watch the phase map dots
+   gather into one clump and the arrow grow.
 
-Terminal 1:
-```
-python scripts/fake_esp32.py
-```
-Terminal 2:
-```
-python scripts/run_live.py --peer 127.0.0.1
-```
+5. **W** - wall up. Two rooms that can't hear each other: the card says
+   **2 rhythms**. **D** - open the doorway: the rooms find each other and
+   merge into **1 rhythm** (~20 s). Press **W** again to remove the wall.
 
-You should see the swarm converge, and "ESP32 off-beat" settle near 0 ms in
-green. If this works, the laptop side is fine and any problem tomorrow is
-on the ESP32 or Wi-Fi side.
+6. **X** - rogue drone (red), firing at random. One: nothing happens. Press
+   X again for 3, then 5: sync dips, then mostly recovers. "A few broken
+   drones can't wreck the swarm." Press X until it says *removed*.
 
-## 2. Flash the ESP32 (~10 min)
+7. **P** - packet loss. Press until **50 %**: half of all flashes are lost
+   and it still syncs, just slower. **P** until *No packet loss*.
 
-1. Arduino IDE: board **ESP32 Dev Module**, correct COM port.
-2. In `firmware/esp32_firefly/`, copy `secrets.h.example` to `secrets.h`
-   and fill in the hotspot. **2.4 GHz only.**
-3. Upload. "Failed to connect"? Hold **BOOT** while uploading.
-4. Serial Monitor at **115200**. Note the IP it prints.
-5. The LED should already blink about once a second on its own.
+8. **C** clock drift (every clock runs a bit fast or slow) and **M** moving
+   drones: both still sync. Turn them off again.
 
-## 3. Join it to the swarm
+9. **The numbers (1 min).** Show `fig_overview.png`: 50 runs per setting.
+   Bigger swarm 5→50 drones: 11→13 cycles. 50 % loss: still 98 % of runs
+   sync. 1 rogue: harmless; 5 rogues: sync drops to ~87 %.
 
-Laptop on the **same hotspot**:
-```
-python scripts/run_live.py --peer <ESP32 IP> --oneway-ms <one-way from Phase 0>
-```
+10. **Research gap.** "Firefly sync has been shown in theory and on special
+    radios. We show it on a cheap ESP32 over ordinary phone-hotspot Wi-Fi,
+    with the Wi-Fi delay measured live (top right of the ESP32 card)."
 
-Within a few seconds:
-- the panel shows "ESP32 off-beat" with a number
-- the number falls to within about +/-30 ms and turns green
-- the real LED blinks at the same moment as the drones on screen
+Other keys: **SPACE** pause · **L** show radio links · **F** fullscreen ·
+**S** screenshot to `data/shots/` · **ESC** quit.
 
-## 4. The demo, in order
+## If something goes wrong on the day
 
-1. Start `run_live.py`. Swarm starts scattered (red), converges (green).
-2. Point at the real LED blinking with the screen.
-3. **Press BOOT on the ESP32.** It jumps off-beat; watch it pull back in.
-4. **Press R on the laptop.** The virtual swarm scatters and re-syncs, and
-   the ESP32 re-syncs with it.
-5. **Unplug the ESP32 and plug it back in.** It boots off-beat and rejoins
-   on its own.
-6. Press **L** to show the radio links - only drones in range talk.
+| Symptom | Fix |
+|---|---|
+| *Searching for the ESP32…* stays | Same hotspot? ESP32 Serial Monitor shows an IP? Then `demo_esp32.bat --peer <that IP>` |
+| *ESP32 found - waiting* stays | Allow Python through Windows firewall (Private + Public) |
+| Wi-Fi dead | Close it, double-click `demo_fake_esp32.bat`: identical screen, pretend board |
+| Window too big/small | Drag to resize, or **F** for fullscreen; everything rescales |
 
-Power the ESP32 from a power bank during the demo, so it is visibly not
-wired to the laptop.
-
-## If something goes wrong
-
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| Panel stays "ESP32 waiting..." | Laptop's packets not reaching it, or replies blocked | Same hotspot? Right IP? Allow Python through Windows firewall |
-| LED blinks but never syncs | Settings differ between laptop and firmware | PERIOD, COUPLING, DISSIPATION, REFRACTORY must match `run_live.py` defaults |
-| Off-beat number jumps around a lot | Ragged Wi-Fi | Move closer to the hotspot; try another phone; check `WiFi.setSleep(false)` |
-| Off-beat steady but about +10 to +30 ms | Network delay not subtracted | Pass `--oneway-ms` from the Phase 0 test |
-| Window too big / small | Screen size | edit `View(width, height)` in `run_live.py` |
-
-## Settings that must match on both sides
-
-| Setting | Laptop (`run_live.py`) | Firmware (`esp32_firefly.ino`) |
-|---|---|---|
-| Period | `--period 1.0` | `PERIOD_S = 1.0f` |
-| Coupling per flash | `--coupling 0.01` | `COUPLING = 0.01f` |
-| Dissipation | `--dissipation 3.0` | `DISSIPATION = 3.0f` |
-| Refractory | `--refractory 0.05` | `REFRACTORY = 0.05f` |
-| Node ID | `--node-id esp32-1` | `NODE_ID = "esp32-1"` |
+Full hardware troubleshooting: `docs/HARDWARE.md`.

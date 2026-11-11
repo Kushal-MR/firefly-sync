@@ -158,6 +158,11 @@ video of the working demo the first time it works.
 
 ## Phase 3 — Experiments and results
 
+> **Status:** 3a done — scenarios (walls/doorway, loss, drift, movement,
+> rogues), swarm-size, sweeps and figures (`docs/results/`, numbers in
+> `docs/EXPERIMENTS.md`). 3b to do — `channel.py` delay, `reachback.py`,
+> late joiner, hardware-vs-simulation figure.
+
 **Goal:** the graphs. This is where the Phase 2 marks for innovation and
 practical implementation actually come from.
 

@@ -1,6 +1,83 @@
 # Experiments
 
-What Phase 3 measures, and how. Fill the results columns in as they come.
+What Phase 3 measures, and how.
+
+## Results so far (Phase 3a, plain firefly rule)
+
+Run with `python scripts/run_sweep.py` (50 runs per value, ~1 min), then
+`python scripts/plot_results.py`. Figures: `docs/results/fig_*.png`.
+
+How each run works: random layout (seed 100, 101, …; only layouts where
+every drone is connected), all drones start at random phases, run until the
+sync level of the healthy drones stays ≥ 95 % for 2 s (max 90 s). Rogue runs
+last 60 s and report the average sync of the healthy drones over the last
+10 s. Swarm-size runs grow the floor with the swarm so density stays the same.
+
+What we learned:
+- **Size:** 5 → 50 drones only goes 11 → 13 cycles. It does not blow up.
+- **Loss:** each 10 % of lost flashes costs ~2 cycles; even at 50 % loss
+  98 % of runs still sync.
+- **Drift:** ±1–2 % clock error changes nothing; ±5 % slows it and 12 % of
+  runs no longer hold 95 % (clocks pull apart faster than nudges fix them).
+- **Movement:** up to 1.5 m/s no slowdown; moving even helps a little,
+  because drones meet more neighbours.
+- **Rogues:** one is harmless. With 3–5, most runs stay near 100 % but a
+  few layouts break badly (likely where the rogues sit between two groups of drones; not yet checked).
+- **Walls:** two rooms keep two separate rhythms; a 6 m doorway merges them
+  in ~20 s. 2–3 m doorways often never merge (too few drones see through).
+
+
+### size  (changing `drones`, 50 runs per value)
+
+| value | synced | cycles to sync (mean ± std) | median |
+|---|---|---|---|
+| 5 | 100% | 10.9 ± 8.0 | 8.4 |
+| 10 | 100% | 9.7 ± 5.2 | 9.0 |
+| 20 | 100% | 9.3 ± 6.1 | 8.3 |
+| 35 | 98% | 10.4 ± 5.7 | 9.5 |
+| 50 | 96% | 12.6 ± 6.9 | 10.5 |
+
+### loss  (changing `loss`, 50 runs per value)
+
+| value | synced | cycles to sync (mean ± std) | median |
+|---|---|---|---|
+| 0.0 | 100% | 9.3 ± 6.1 | 8.3 |
+| 0.1 | 100% | 10.0 ± 5.6 | 9.2 |
+| 0.2 | 100% | 12.2 ± 6.7 | 11.2 |
+| 0.3 | 100% | 13.4 ± 6.6 | 13.4 |
+| 0.4 | 100% | 17.8 ± 9.9 | 15.3 |
+| 0.5 | 98% | 20.6 ± 11.3 | 16.8 |
+
+### drift  (changing `drift`, 50 runs per value)
+
+| value | synced | cycles to sync (mean ± std) | median |
+|---|---|---|---|
+| 0.0 | 100% | 9.3 ± 6.1 | 8.3 |
+| 0.01 | 100% | 9.4 ± 4.8 | 8.7 |
+| 0.02 | 100% | 10.4 ± 5.9 | 9.1 |
+| 0.05 | 88% | 18.5 ± 16.5 | 14.9 |
+
+### speed  (changing `speed`, 50 runs per value)
+
+| value | synced | cycles to sync (mean ± std) | median |
+|---|---|---|---|
+| 0.0 | 100% | 9.3 ± 6.1 | 8.3 |
+| 0.5 | 100% | 9.0 ± 5.3 | 8.2 |
+| 1.0 | 100% | 9.0 ± 5.4 | 8.1 |
+| 1.5 | 100% | 8.1 ± 3.3 | 8.1 |
+
+### rogues  (changing `rogues`, 50 runs per value)
+
+| value | sync of healthy drones (mean ± std) | worst moment |
+|---|---|---|
+| 0 | 100.0% ± 0.0 | 100% |
+| 1 | 100.0% ± 0.0 | 98% |
+| 3 | 97.1% ± 12.1 | 6% |
+| 5 | 86.9% ± 23.4 | 2% |
+
+---
+
+## Still to do (Phase 3b)
 
 ---
 
