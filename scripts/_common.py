@@ -26,6 +26,8 @@ def swarm_args(desc):
     ap.add_argument("--log", action="store_true", help="save every flash to data/*.csv")
     sc = ap.add_argument_group("scenarios (also switchable live with keys)")
     sc.add_argument("--walls", action="store_true", help="wall splits the floor into two rooms (W)")
+    sc.add_argument("--wall-type", choices=["solid", "thin"], default="solid",
+                    help="solid blocks radio; thin lets a weak signal through (W cycles them)")
     sc.add_argument("--door-open", action="store_true", help="open the doorway in the wall (D)")
     sc.add_argument("--rogues", type=int, default=0, help="number of faulty drones firing at random (X)")
     sc.add_argument("--drift", type=float, default=0.0, help="clock drift std, e.g. 0.02 = ±2%% (C)")
@@ -45,7 +47,7 @@ def make_swarm(args):
                  dissipation=args.dissipation, refractory=args.refractory,
                  radio_range=args.radio_range or None, area=parse_area(args.area), seed=args.seed,
                  walls=args.walls, door_open=args.door_open, loss=args.loss, drift=args.drift,
-                 speed=args.speed, rogues=args.rogues)
+                 speed=args.speed, rogues=args.rogues, wall_type=args.wall_type)
 
 
 def log_path(prefix):

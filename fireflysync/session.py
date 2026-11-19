@@ -170,9 +170,16 @@ class Session:
         if action == "scramble":
             self.scramble()
             return "Scrambled - watch them re-sync"
-        if action == "walls":
-            sw.set_walls(not sw.walls_on)
-            msg = ("Wall up: two rooms, two rhythms" if sw.walls_on else "Wall removed: one open floor")
+        if action == "walls":                          # off -> solid -> thin -> off
+            if not sw.walls_on:
+                sw.set_walls(True, "solid")
+                msg = "Solid wall: the rooms can't hear each other - two rhythms"
+            elif sw.wall_type == "solid":
+                sw.set_walls(True, "thin")
+                msg = "Thin wall: weak signal gets through - watch the rooms merge"
+            else:
+                sw.set_walls(False)
+                msg = "Wall removed: one open floor"
         elif action == "door":
             if not sw.walls_on:
                 return "Put the wall up first (W)"
@@ -201,7 +208,7 @@ class Session:
         """(key, name, state text, active) for every scenario, for the panel."""
         sw = self.swarm
         return [
-            ("W", "Walls", "two rooms" if sw.walls_on else "off", sw.walls_on),
+            ("W", "Walls", f"{sw.wall_type}" if sw.walls_on else "off", sw.walls_on),
             ("D", "Doorway", ("open" if sw.door_open else "closed") if sw.walls_on else "-",
              sw.walls_on and sw.door_open),
             ("X", "Rogue drones", str(len(sw.rogues)) if sw.rogues else "off", bool(sw.rogues)),

@@ -23,8 +23,14 @@ What we learned:
   because drones meet more neighbours.
 - **Rogues:** one is harmless. With 3–5, most runs stay near 100 % but a
   few layouts break badly (likely where the rogues sit between two groups of drones; not yet checked).
-- **Walls:** two rooms keep two separate rhythms; a 6 m doorway merges them
-  in ~20 s. 2–3 m doorways often never merge (too few drones see through).
+- **Walls** (same 50 layouts each): no wall 9.3 cycles; **thin wall** (radio
+  through it only up to 4.5 m) 14.5 cycles, 94 % sync; solid wall + 6 m
+  doorway 11.6 cycles, 98 %; **solid wall alone never connects** - not one
+  flash crosses it. 18 % of those runs still pass the 95 % test, but only
+  because the two rooms' separate rhythms happened to start 2-6 % of a cycle
+  apart: luck, not sync, so no time is plotted for it. 2-3 m doorways often
+  never merge (too few drones see through). Lesson: the firefly rule needs
+  only a weak, partial link between groups, but it does need one.
 
 
 ### size  (changing `drones`, 50 runs per value)
@@ -74,6 +80,15 @@ What we learned:
 | 1 | 100.0% ± 0.0 | 98% |
 | 3 | 97.1% ± 12.1 | 6% |
 | 5 | 86.9% ± 23.4 | 2% |
+
+### walls  (changing `wall`, 50 runs per value)
+
+| value | synced | cycles to sync (mean ± std) | median |
+|---|---|---|---|
+| no wall | 100% | 9.3 ± 6.1 | 8.3 |
+| thin wall | 94% | 14.5 ± 9.0 | 12.3 |
+| solid wall + 6 m doorway | 98% | 11.6 ± 8.6 | 9.3 |
+| solid wall | 18% | never - rooms can't hear each other (the % is runs in step by chance) | - |
 
 ---
 

@@ -49,7 +49,7 @@ Or by hand:
 
 ```bash
 pip install -r requirements.txt
-python -m pytest                          # 76 tests, all must pass
+python -m pytest                          # 80 tests, all must pass
 python scripts/run_sim.py                 # virtual swarm in a window
 python scripts/run_live.py                # swarm + real ESP32 (auto-discovery)
 python scripts/fake_esp32.py              # pretend ESP32 (run in a 2nd terminal)
@@ -61,8 +61,8 @@ python scripts/plot_results.py            # figures into data/figures/
 
 | Key | Does |
 |---|---|
-| **W** | wall up: two rooms that can't hear each other → two rhythms |
-| **D** | open a doorway in the wall → the rooms merge into one rhythm |
+| **W** | walls: off → **solid** (rooms can't hear each other → two rhythms) → **thin** (weak signal gets through → they merge) → off |
+| **D** | open a 6 m doorway in the wall → the rooms merge into one rhythm |
 | **X** | rogue (faulty) drones firing at random: 0 → 1 → 3 → 5 |
 | **C** | clock drift: every drone's clock ±2 % fast or slow |
 | **M** | drones move around (0.8 m/s) |
@@ -73,7 +73,7 @@ python scripts/plot_results.py            # figures into data/figures/
 The right side shows the sync level (with cycles to sync and number of
 rhythms), a phase map, the scenario switches, the ESP32 card (searching →
 found → *x/6 LEDs in sync*, measured Wi-Fi delay) and the last 30 s of sync.
-The same scenarios exist as flags: `--walls --door-open --rogues 3
+The same scenarios exist as flags: `--walls --wall-type thin --door-open --rogues 3
 --drift 0.02 --move 0.8 --loss 0.3`.
 
 ## Results (50 runs per setting)
@@ -85,7 +85,7 @@ The same scenarios exist as flags: `--walls --door-open --rogues 3
 | Clock drift ±0 → ±2 % / ±5 % | no change / 18 cycles, 88 % sync |
 | Moving drones 0 → 1.5 m/s | no slowdown (9 → 8 cycles) |
 | Rogue drones 1 / 3 / 5 | sync of healthy drones 100 % / 97 % / 87 % |
-| Two rooms + 6 m doorway | separate rhythms merge in ~20 s |
+| Walls: none / thin / solid + doorway / solid | 9 / 15 / 12 cycles; solid alone never connects |
 | Real ESP32 on phone hotspot | median RTT 51 ms, one-way ≈ 26 ms, 100/100 replies |
 
 Figures and the full table: `docs/results/`. Regenerate with the two

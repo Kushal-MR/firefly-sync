@@ -26,7 +26,16 @@ from fireflysync.session import Session
 from fireflysync.swarm import Swarm
 
 BASE = dict(drones=20, radio_range=9.0, area=(20.0, 12.0), coupling=0.01,
-            loss=0.0, drift=0.0, speed=0.0, rogues=0, walls=False, door_open=False)
+            loss=0.0, drift=0.0, speed=0.0, rogues=0, walls=False, door_open=False,
+            wall_type="solid")
+
+# The "walls" experiment: value -> (label, settings). Numbered so they sort in order.
+WALL_CONDITIONS = {
+    0: ("no wall", dict(walls=False)),
+    1: ("thin wall", dict(walls=True, wall_type="thin")),
+    2: ("solid wall\n+ 6 m doorway", dict(walls=True, wall_type="solid", door_open=True)),
+    3: ("solid wall", dict(walls=True, wall_type="solid")),
+}
 
 # name: (setting changed, values, what is measured, run length in seconds)
 EXPERIMENTS = {
@@ -35,6 +44,7 @@ EXPERIMENTS = {
     "drift":  ("drift",  [0.0, 0.01, 0.02, 0.05], "time", 90.0),
     "speed":  ("speed",  [0.0, 0.5, 1.0, 1.5], "time", 90.0),
     "rogues": ("rogues", [0, 1, 3, 5], "steady", 60.0),
+    "walls":  ("wall",   list(WALL_CONDITIONS), "time", 90.0),
 }
 
 FIELDS = ["experiment", "setting", "value", "seed", "drones", "area", "radio_range", "coupling",
@@ -51,13 +61,19 @@ def area_for(drones, base=BASE):
 
 
 def make_swarm(c, seed, max_tries=200):
-    """The first connected layout from `seed` on. Returns (swarm, seed used)."""
+    """The first layout from `seed` on that is connected WITHOUT walls, then
+    the walls are put up. So every wall condition is tried on the same
+    layouts, and a solid wall really does split a connected swarm.
+    Returns (swarm, seed used)."""
     for s in range(seed, seed + max_tries * 1000, 1000):
         sw = Swarm(c["drones"], coupling=c["coupling"], radio_range=c["radio_range"],
-                   area=c["area"], seed=s, walls=c["walls"], door_open=c["door_open"],
-                   loss=c["loss"], drift=c["drift"], speed=c["speed"], rogues=c["rogues"])
+                   area=c["area"], seed=s, loss=c["loss"], drift=c["drift"],
+                   speed=c["speed"], rogues=c["rogues"])
         if sw.is_connected():
-            return sw, s
+            break
+    if c["walls"]:
+        sw.door_open = c["door_open"]
+        sw.set_walls(True, c["wall_type"])
     return sw, s
 
 
@@ -89,6 +105,8 @@ def run_once(config, seed, seconds, stop_when_synced=True):
 def _job(args):
     name, setting, value, seed, seconds, stop = args
     config = {setting: value}
+    if setting == "wall":
+        config = dict(WALL_CONDITIONS[value][1])
     if setting == "drones":
         config["area"] = area_for(value)
     row = run_once(config, seed, seconds, stop)
@@ -136,7 +154,7 @@ def summarise(rows):
     out = []
     for v in sorted({r["value"] for r in rows}):
         rs = [r for r in rows if r["value"] == v]
-        cyc = [r["cycles_to_sync"] for r in rs if r["synced"]]
+        cyc = [r["cycles_to_sync"] for r in rs if r["synced"] and r["cycles_to_sync"] is not None]
         steady = [r["mean_sync_last10s"] for r in rs if r["mean_sync_last10s"] is not None]
         lows = [r["min_sync_last10s"] for r in rs if r["min_sync_last10s"] is not None]
         out.append({

@@ -18,7 +18,11 @@ together.
 
 Scenarios (all off by default, each switchable at run time):
 
-* walls      - a wall splits the floor into two rooms; radio can't cross it
+* walls      - a wall splits the floor into two rooms. wall_type "solid"
+               (concrete): radio can't cross it. "thin" (drywall/glass):
+               radio crosses it but weakened - only between drones within
+               THIN_WALL_REACH of the normal radio range. Drones can't
+               walk through either kind.
 * door_open  - opens a door in that wall, so the rooms can hear each other
 * loss       - each flash delivery is dropped with this probability
 * drift      - each drone's clock runs a little fast or slow (std, e.g. 0.02)
@@ -38,6 +42,8 @@ from fireflysync import geometry
 from fireflysync.oscillator import Oscillator
 
 NEIGHBOUR_REFRESH = 0.1        # seconds between radio-range rebuilds while moving
+THIN_WALL_REACH = 0.5          # through a thin wall, radio reaches this fraction of its range
+WALL_TYPES = ("solid", "thin")
 
 
 @dataclass(frozen=True)
@@ -50,7 +56,8 @@ class FireEvent:
 class Swarm:
     def __init__(self, n, period=1.0, coupling=0.01, dissipation=3.0, refractory=0.05,
                  radio_range=None, area=(20.0, 12.0), seed=None,
-                 walls=False, door_open=False, loss=0.0, drift=0.0, speed=0.0, rogues=0):
+                 walls=False, door_open=False, loss=0.0, drift=0.0, speed=0.0, rogues=0,
+                 wall_type="solid"):
         if n < 1:
             raise ValueError("need at least one drone")
         self.rng = random.Random(seed)
@@ -80,6 +87,9 @@ class Swarm:
         self._headings = [self._rng_move.uniform(0, 2 * math.pi) for _ in range(n)]
 
         self.walls_on = walls
+        if wall_type not in WALL_TYPES:
+            raise ValueError(f"wall_type must be one of {WALL_TYPES}")
+        self.wall_type = wall_type
         self.door_open = door_open
         self.loss = 0.0
         self.drift = 0.0
@@ -98,15 +108,26 @@ class Swarm:
     def walls(self):
         return geometry.two_rooms(self.area, self.door_open) if self.walls_on else []
 
+    @property
+    def through_wall_reach(self):
+        """How far radio reaches through the wall (m): 0 for a solid wall."""
+        if self.wall_type != "thin":
+            return 0.0
+        full = self.radio_range if self.radio_range is not None else math.hypot(*self.area)
+        return THIN_WALL_REACH * full
+
+    def _hears(self, a, b, walls, reach):
+        d = math.hypot(a[0] - b[0], a[1] - b[1])
+        if self.radio_range is not None and d > self.radio_range:
+            return False
+        if walls and geometry.blocked(a, b, walls):
+            return d <= reach                    # weakened signal through a thin wall
+        return True
+
     def _rebuild_neighbours(self):
-        pts, r, walls = self.positions, self.radio_range, self.walls
-        self.neighbours = []
-        for i, a in enumerate(pts):
-            near = [j for j, b in enumerate(pts)
-                    if j != i
-                    and (r is None or math.hypot(a[0] - b[0], a[1] - b[1]) <= r)
-                    and not (walls and geometry.blocked(a, b, walls))]
-            self.neighbours.append(near)
+        pts, walls, reach = self.positions, self.walls, self.through_wall_reach
+        self.neighbours = [[j for j, b in enumerate(pts) if j != i and self._hears(a, b, walls, reach)]
+                           for i, a in enumerate(pts)]
         self.layout_version += 1
 
     def add_external(self, name, position=None):
@@ -145,8 +166,12 @@ class Swarm:
         return len(self.components()) == 1
 
     # ----- scenarios ---------------------------------------------------------
-    def set_walls(self, on):
+    def set_walls(self, on, wall_type=None):
         self.walls_on = bool(on)
+        if wall_type is not None:
+            if wall_type not in WALL_TYPES:
+                raise ValueError(f"wall_type must be one of {WALL_TYPES}")
+            self.wall_type = wall_type
         self._rebuild_neighbours()
 
     def set_door(self, is_open):

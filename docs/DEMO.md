@@ -36,9 +36,15 @@ About 6 minutes. Practise it once end to end the day before.
 4. **R** - scramble the whole virtual swarm. Watch the phase map dots
    gather into one clump and the arrow grow.
 
-5. **W** - wall up. Two rooms that can't hear each other: the card says
-   **2 rhythms**. **D** - open the doorway: the rooms find each other and
-   merge into **1 rhythm** (~20 s). Press **W** again to remove the wall.
+5. **Walls.** Press **W**: a *solid* wall (like concrete). The rooms can't
+   hear each other, so the card says **2 rhythms**. "No communication, no
+   sync - that's physics, not a bug."
+   Press **W** again: a *thin* wall (like drywall or glass). Radio gets
+   through but weakened, only up to 4.5 m (the shaded band). A few drones near
+   the wall are enough: the rooms merge into **1 rhythm** in about 30 s.
+   "Our swarm only needs one weak path to stay in sync."
+   (Or from the solid wall press **D** to open a doorway: same result.)
+   Press **W** once more to remove the wall.
 
 6. **X** - rogue drone (red), firing at random. One: nothing happens. Press
    X again for 3, then 5: sync dips, then mostly recovers. "A few broken
@@ -50,7 +56,8 @@ About 6 minutes. Practise it once end to end the day before.
 8. **C** clock drift (every clock runs a bit fast or slow) and **M** moving
    drones: both still sync. Turn them off again.
 
-9. **The numbers (1 min).** Show `fig_overview.png`: 50 runs per setting.
+9. **The numbers (1 min).** Show `fig_overview.png` (and `fig_walls.png`): 50 runs per setting.
+   Thin wall: 94 % of layouts still sync (15 cycles vs 9 with no wall).
    Bigger swarm 5→50 drones: 11→13 cycles. 50 % loss: still 98 % of runs
    sync. 1 rogue: harmless; 5 rogues: sync drops to ~87 %.
 

@@ -102,3 +102,58 @@ def test_rogues_ignore_everyone():
         s.oscillators[i].scramble(0.999)
     s.step(0.002)                          # everyone else fires
     assert s.oscillators[r].phase == pytest.approx(0.502, abs=1e-6)
+
+
+# ----- thin walls --------------------------------------------------------------
+def _cross_links(sw):
+    mid = sw.area[0] / 2
+    return [(i, j) for i in range(sw.n_virtual) for j in sw.neighbours[i]
+            if j > i and (sw.positions[i][0] < mid) != (sw.positions[j][0] < mid)]
+
+
+def test_thin_wall_lets_only_short_links_through():
+    from fireflysync.swarm import Swarm
+    sw = Swarm(20, radio_range=9.0, seed=3, walls=True, wall_type="thin")
+    links = _cross_links(sw)
+    assert links, "a thin wall should let some signal through"
+    reach = sw.through_wall_reach
+    assert reach == 4.5
+    for i, j in links:
+        (ax, ay), (bx, by) = sw.positions[i], sw.positions[j]
+        assert ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5 <= reach + 1e-9
+    solid = Swarm(20, radio_range=9.0, seed=3, walls=True, wall_type="solid")
+    assert _cross_links(solid) == []
+
+
+def test_solid_wall_splits_but_thin_wall_merges_the_rooms():
+    from fireflysync.session import Session
+    from fireflysync.swarm import Swarm
+    sw = Swarm(20, radio_range=9.0, seed=3)
+    s = Session(sw)
+    sw.set_walls(True, "solid")
+    s.scramble()
+    while sw.time < 25:
+        s._step()
+    assert s.rhythms() >= 2
+    sw.set_walls(True, "thin")
+    while sw.time < 85:
+        s._step()
+    assert s.rhythms() == 1 and s.sync_level() > 0.95
+
+
+def test_w_key_cycles_off_solid_thin_off():
+    from fireflysync.session import Session
+    from fireflysync.swarm import Swarm
+    s = Session(Swarm(20, radio_range=9.0, seed=3))
+    seen = []
+    for _ in range(3):
+        s.apply("walls")
+        seen.append((s.swarm.walls_on, s.swarm.wall_type if s.swarm.walls_on else None))
+    assert seen == [(True, "solid"), (True, "thin"), (False, None)]
+
+
+def test_bad_wall_type_is_refused():
+    import pytest
+    from fireflysync.swarm import Swarm
+    with pytest.raises(ValueError):
+        Swarm(5, wall_type="glass")

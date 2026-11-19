@@ -410,10 +410,26 @@ class View:
 
     def _walls(self, sw, plan, P):
         u = self.u
-        width = u(5)
-        for a, b in sw.walls:
-            pygame.draw.line(self.screen, WALL, P(a), P(b), width)
         x = P((sw.area[0] / 2, 0))[0]
+        thin = sw.wall_type == "thin"
+        for a, b in sw.walls:
+            if not thin:                                   # solid: one heavy line
+                pygame.draw.line(self.screen, WALL, P(a), P(b), u(5))
+                continue
+            # thin: a lighter dashed wall, so it reads as "signal leaks through"
+            (ax, ay), (bx, by) = P(a), P(b)
+            dash, y = u(9), min(ay, by)
+            while y < max(ay, by):
+                pygame.draw.line(self.screen, (120, 132, 168), (ax, y), (ax, min(y + dash, max(ay, by))), u(3))
+                y += dash + u(5)
+        if thin and sw.radio_range:
+            # where a drone must be to reach through: within half its range of the wall
+            reach = sw.through_wall_reach * (plan.w / sw.area[0])
+            band = pygame.Surface((int(reach), plan.h), pygame.SRCALPHA)
+            band.fill((*TEAL, 18))
+            self.screen.blit(band, (x - reach / 2, plan.y))
+            self._text(f"thin wall: radio reaches {sw.through_wall_reach:g} m through", "tiny",
+                       TEAL, (x, plan.bottom + u(6)), "midtop")
         if sw.door_open:
             ys = sorted(pt[1] for seg in sw.walls for pt in seg)
             lo, hi = P((0, ys[1]))[1], P((0, ys[2]))[1]       # the gap between the two segments

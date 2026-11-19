@@ -51,7 +51,7 @@ experiments). Phase 3b (not started) compares the plain rule with the
 |---|---|---|
 | `fireflysync/oscillator.py` | One firefly: phase, fire, nudge (concave M-S curve), refractory window | done |
 | `fireflysync/swarm.py` | Drones, positions, radio range + walls, cascades, external (real) nodes, scenarios: `set_walls/set_door/set_loss/set_drift/set_speed/set_rogues`, `healthy_phases` (excludes rogues and real LEDs) | done |
-| `fireflysync/geometry.py` | `segments_cross`, `blocked`, `two_rooms(area, door_open, door_width=6.0)` | done |
+| `fireflysync/geometry.py` | `segments_cross`, `blocked`, `two_rooms(area, door_open, door_width=6.0)` (thin/solid logic is in `swarm._hears`) | done |
 | `fireflysync/metrics.py` | Sync level (Kuramoto order parameter), circular mean, offset in ms, `time_to_sync`, `cycles`, `rhythm_groups` | done |
 | `fireflysync/session.py` | Run loop (real-time or headless), adds each LED on its first FIRE, HELLO/PING timers, scenario `apply()`, sync clock, CSV log | done |
 | `fireflysync/link.py` | UDP: FIRE parse/format, HELLO discovery, PING round-trip → `oneway_ms` | done |
@@ -67,7 +67,7 @@ experiments). Phase 3b (not started) compares the plain rule with the
 | `firmware/esp32_firefly/esp32_firefly.ino` | The real board: N LEDs, each a firefly | written, **needs first compile + run on hardware** |
 | `fireflysync/channel.py`, `reachback.py` | Artificial delay, Reachback | **stub — Phase 3b** |
 | `*.bat` | Windows launchers, use `.venv\Scripts\python.exe` | done |
-| `tests/` | pytest suite (76 tests) | done |
+| `tests/` | pytest suite (80 tests) | done |
 | `docs/` | `PLAN`, `ALGORITHM` (papers), `HARDWARE` (ESP team guide), `DEMO` (evaluation script), `EXPERIMENTS`, `results/` (committed figures) | |
 
 ## Invariants — do not break these
@@ -97,6 +97,10 @@ experiments). Phase 3b (not started) compares the plain rule with the
   has its own stream seeded `f"{seed}-{tag}"` (loss, rogue, move, drift), so
   switching a scenario on never changes the default layout. Default
   `--seed 3` is the demo layout (syncs in 7.67 s, a test checks it).
+- Walls: `wall_type` "solid" blocks radio; "thin" lets a link through only
+  if the two drones are within `THIN_WALL_REACH` (0.5) × radio range, i.e.
+  4.5 m. Drones never walk through either. W cycles off → solid → thin → off.
+  Do not make solid walls "sync anyway": with zero links that would be faked.
 - Scenario constants: doorway 6 m (narrower doesn't reliably merge), rogue
   steps 0/1/3/5 (best-connected drones first), loss steps 0/10/30/50 %,
   drift ±2 %, speed 0.8 m/s — in `session.py` / `geometry.py`.
