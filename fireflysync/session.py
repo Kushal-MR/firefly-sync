@@ -16,8 +16,10 @@ import math
 import random
 import time
 from collections import deque
+from dataclasses import dataclass
 
 from fireflysync import metrics
+from fireflysync.radio import Radio
 
 FLASH_SECONDS = 0.12          # how long a flash stays lit on screen
 SAMPLE_EVERY = 0.05           # seconds between sync-level samples
@@ -32,8 +34,19 @@ DRIFT_ON = 0.02
 SPEED_ON = 0.8
 
 
+@dataclass
+class Run:
+    """One convergence the audience watched: from scattered to synced."""
+    number: int
+    cause: str          # what scattered them: "start", "scramble", "walls", ...
+    settings: str       # scenario settings at the time, e.g. "thin wall · 30% loss"
+    seconds: float
+    cycles: float
+
+
 class Session:
-    def __init__(self, swarm, dt=0.002, link=None, oneway_delay=None, log_path=None):
+    def __init__(self, swarm, dt=0.002, link=None, oneway_delay=None, log_path=None,
+                 radio_mode="slots", radio_seed=None, print_runs=False):
         self.swarm = swarm
         self.dt = dt
         self.link = link
@@ -47,6 +60,12 @@ class Session:
         self.epoch_start = 0.0                         # start, or the last scenario change
         self.synced_after = None                       # seconds from epoch_start to sync
         self._above_since = None
+        self.runs = []                                 # every Run, in order
+        self.print_runs = print_runs                   # the window scripts announce each run
+        self.radio = Radio(swarm.n_virtual, swarm.period, radio_mode, seed=radio_seed)
+        self.loss_history = deque(maxlen=int(HISTORY_SECONDS / SAMPLE_EVERY))
+        self._epoch_cause = "start"
+        self._epoch_scattered = None                   # decided by the epoch's first sample
         self._next_sample = 0.0
         self._next_hello = 0.0
         self._next_ping = 0.0
@@ -115,8 +134,14 @@ class Session:
             self.link.send_ping()
             self._next_ping = t + 1.0
 
+    def _swarm_phase(self):
+        return metrics.circular_mean(self.swarm.healthy_phases)
+
     def _step(self):
-        for ev in self.swarm.step(self.dt):
+        events = self.swarm.step(self.dt)
+        sw = self.swarm
+        self.radio.update(sw.time, sw.virtual_phases, sw.neighbours, self._swarm_phase)
+        for ev in events:
             self.last_fire[ev.node] = ev.time
             if ev.external:
                 continue
@@ -129,6 +154,7 @@ class Session:
         if self.swarm.time >= self._next_sample:
             lvl = metrics.order_parameter(self.swarm.healthy_phases)
             self.history.append((self.swarm.time, lvl))
+            self.loss_history.append((self.swarm.time, self.radio.loss_rate(since=self.swarm.time - 1.0)))
             self.times.append(self.swarm.time)
             self.levels.append(lvl)
             self._next_sample = self.swarm.time + SAMPLE_EVERY
@@ -136,18 +162,65 @@ class Session:
 
     def _track_sync(self, lvl):
         t = self.swarm.time
+        if self._epoch_scattered is None:
+            # Only count a run if the swarm actually had to converge. Turning
+            # packet loss on while already synced would otherwise log "0 cycles".
+            self._epoch_scattered = lvl < SYNC_THRESHOLD
         if lvl >= SYNC_THRESHOLD:
             if self._above_since is None:
                 self._above_since = t
             if self.synced_after is None and t - self._above_since >= SYNC_HOLD:
                 self.synced_after = self._above_since - self.epoch_start
+                if self._epoch_scattered:
+                    self._record_run()
         else:
             self._above_since = None
 
-    def _restart_sync_clock(self):
+    def _restart_sync_clock(self, cause="scramble"):
         self.epoch_start = self.swarm.time
         self.synced_after = None
         self._above_since = None
+        self._epoch_cause = cause
+        self._epoch_scattered = None
+
+    # ----- run statistics ------------------------------------------------------
+    def settings_label(self):
+        """The scenarios that are on right now, e.g. "thin wall · 30% loss"."""
+        on = [f"{state} {name.lower()}" if key in "WD" else f"{name.lower()} {state}"
+              for key, name, state, active in self.scenarios() if active]
+        return " · ".join(on) if on else "open floor"
+
+    def _record_run(self):
+        run = Run(len(self.runs) + 1, self._epoch_cause, self.settings_label(),
+                  round(self.synced_after, 2),
+                  round(metrics.cycles(self.synced_after, self.swarm.period), 1))
+        self.runs.append(run)
+        if self.print_runs:
+            print(f"run {run.number:>2}: {run.cycles:5.1f} cycles ({run.seconds:.1f} s)"
+              f"  after {run.cause}  [{run.settings}]")
+
+    def run_stats(self, settings=None):
+        """Mean, std, min, max cycles and n over runs with these settings
+        (default: the current ones). Mixing settings would make the average lie."""
+        settings = self.settings_label() if settings is None else settings
+        cyc = [r.cycles for r in self.runs if r.settings == settings]
+        if not cyc:
+            return None
+        mean = sum(cyc) / len(cyc)
+        std = (sum((c - mean) ** 2 for c in cyc) / (len(cyc) - 1)) ** 0.5 if len(cyc) > 1 else 0.0
+        return {"settings": settings, "n": len(cyc), "mean": mean, "std": std,
+                "min": min(cyc), "max": max(cyc)}
+
+    def save_runs(self, path):
+        """Write every run to CSV. Returns the path, or None if there were none."""
+        if not self.runs:
+            return None
+        with open(path, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["run", "cause", "settings", "seconds_to_sync", "cycles_to_sync"])
+            for r in self.runs:
+                w.writerow([r.number, r.cause, r.settings, r.seconds, r.cycles])
+        return path
 
     def _write(self, t, node, kind, offset):
         if self._log:
@@ -167,9 +240,14 @@ class Session:
         Every change restarts the sync clock, so "synced in" shows recovery."""
         sw = self.swarm
         msg = None
+        if action == "talk":                           # not a sync change: clock keeps running
+            mode = "random" if self.radio.mode == "slots" else "slots"
+            self.radio.set_mode(mode)
+            return ("Timetable: each drone talks only in its own time slot" if mode == "slots"
+                    else "Random timing: drones talk whenever they like (no timetable)")
         if action == "scramble":
             self.scramble()
-            return "Scrambled - watch them re-sync"
+            return f"Scrambled - run #{len(self.runs) + 1} starts now"
         if action == "walls":                          # off -> solid -> thin -> off
             if not sw.walls_on:
                 sw.set_walls(True, "solid")
@@ -201,7 +279,7 @@ class Session:
             sw.set_loss(nxt)
             msg = f"{100 * nxt:.0f}% of flashes lost" if nxt else "No packet loss"
         if msg:
-            self._restart_sync_clock()
+            self._restart_sync_clock(action)
         return msg
 
     def scenarios(self):
@@ -302,6 +380,9 @@ class Session:
 
     def status_line(self):
         s = f"t={self.swarm.time:6.1f}s  sync={100 * self.sync_level():5.1f}%  rhythms={self.rhythms()}"
+        lost = self.radio.loss_rate()
+        if lost is not None:
+            s += f"  msgs lost={100 * lost:4.1f}%"
         if self.link is not None:
             if not self.exts:
                 s += "  esp32: " + ("found, waiting for flashes" if self.link.peer else "searching...")
@@ -322,6 +403,8 @@ class Session:
             "time_to_sync_s": None if tts is None else round(tts, 2),
             "cycles_to_sync": None if tts is None else round(metrics.cycles(tts, self.swarm.period), 1),
             "rhythms": self.rhythms(),
+            "radio_mode": self.radio.mode,
+            "messages_lost_pct_last_5s": None if self.radio.loss_rate() is None else round(100 * self.radio.loss_rate(), 1),
             "esp32_leds_heard": n,
             "esp32_leds_in_sync": ok,
             "esp32_offset_ms": None if off is None else round(off, 1),

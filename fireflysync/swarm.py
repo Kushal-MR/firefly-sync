@@ -95,6 +95,7 @@ class Swarm:
         self.drift = 0.0
         self.speed = 0.0
         self.rogues = set()                     # indices of faulty drones
+        self.sync_on = True                     # False: nobody reacts to flashes (baseline)
         self.layout_version = 0                 # bumps whenever neighbours change
         self._next_refresh = 0.0
         self.set_loss(loss)
@@ -270,7 +271,7 @@ class Swarm:
         while queue:
             src = queue.pop()
             for j in self.neighbours[src]:
-                if j >= self.n_virtual or j in fired or j in self.rogues:
+                if j >= self.n_virtual or j in fired or j in self.rogues or not self.sync_on:
                     continue
                 if self.loss and self._rng_loss.random() < self.loss:
                     continue                            # this flash was not heard

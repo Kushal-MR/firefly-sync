@@ -1,6 +1,6 @@
 """Run the experiments and write the results to data/sweep_<name>.csv.
 
-    python scripts/run_sweep.py                    every experiment, 50 repeats (about a minute)
+    python scripts/run_sweep.py                    every experiment, 50 repeats (about 3 minutes)
     python scripts/run_sweep.py --experiment size  just one
     python scripts/run_sweep.py --repeats 2        quick check of the pipeline
 
@@ -10,6 +10,9 @@ Experiments (each changes ONE thing, see fireflysync/sweep.py):
     drift    clocks 0 - 5 % fast or slow         -> cycles to sync
     speed    drones moving 0 - 1.5 m/s           -> cycles to sync
     rogues   0, 1, 3, 5 faulty drones            -> steady sync level
+    walls    no wall / thin / solid + door / solid -> cycles to sync
+    collisions  random timing vs timetable (unsynced) vs timetable + firefly sync,
+             5-50 drones                         -> % messages lost to collisions
 
 Then:  python scripts/plot_results.py
 """
@@ -20,9 +23,21 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fireflysync.sweep import EXPERIMENTS, summarise, sweep, load  # noqa: E402
+from fireflysync.sweep import COLLISION_SIZES, EXPERIMENTS, load, summarise, sweep  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def print_collisions(rows):
+    import statistics as st
+    from fireflysync.sweep import TALK_CONDITIONS
+    for n in COLLISION_SIZES:
+        cells = []
+        for v, (label, _) in TALK_CONDITIONS.items():
+            xs = [r["msgs_lost_pct"] for r in rows if r["drones"] == n and r["value"] == v
+                  and r["msgs_lost_pct"] is not None]
+            cells.append(f"{label}: {st.mean(xs):5.1f}%" if xs else f"{label}: -")
+        print(f"    {n:>2} drones  lost to collisions  " + "  |  ".join(cells))
 
 
 def main():
@@ -35,9 +50,13 @@ def main():
     for name in names:
         t0 = time.time()
         path = os.path.join(ROOT, "data", f"sweep_{name}.csv")
-        print(f"{name}: {len(EXPERIMENTS[name][1]) * args.repeats} runs ...")
+        sizes = len(COLLISION_SIZES) if name == "collisions" else 1
+        print(f"{name}: {len(EXPERIMENTS[name][1]) * args.repeats * sizes} runs ...")
         sweep(name, args.repeats, path, args.workers)
         print(f"  wrote {os.path.relpath(path, ROOT)} in {time.time() - t0:.0f} s")
+        if name == "collisions":
+            print_collisions(load(path))
+            continue
         for s in summarise(load(path)):
             cyc = "never" if s["cycles_mean"] is None else f"{s['cycles_mean']:5.1f} ± {s['cycles_std']:4.1f} cycles"
             print(f"    {EXPERIMENTS[name][0]}={s['value']:<5}  synced {s['pct_synced']:5.1f}%  {cyc}"

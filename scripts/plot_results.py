@@ -16,7 +16,8 @@ sys.path.insert(0, ROOT)
 import matplotlib.pyplot as plt  # noqa: E402
 
 from analysis.plots import footnote, spread_plot, style  # noqa: E402
-from fireflysync.sweep import EXPERIMENTS, WALL_CONDITIONS, load, summarise  # noqa: E402
+from fireflysync.sweep import (COLLISION_SIZES, EXPERIMENTS, TALK_CONDITIONS,  # noqa: E402
+                               WALL_CONDITIONS, load, summarise)
 
 DATA = os.path.join(ROOT, "data")
 OUT = os.path.join(DATA, "figures")
@@ -78,6 +79,61 @@ def fig_cycles(name, rows, summ):
     return fig
 
 
+# validated categorical slots 1-3 (dataviz reference palette: safe for colour-blind readers)
+TALK_COLOURS = {0: "#2a78d6", 1: "#eb6834", 2: "#1baf7a"}
+
+
+def collision_summary(rows):
+    import statistics as st
+    out = {}
+    for v in TALK_CONDITIONS:
+        for n in COLLISION_SIZES:
+            xs = [r["msgs_lost_pct"] for r in rows if r["value"] == v and r["drones"] == n
+                  and r["msgs_lost_pct"] is not None]
+            if xs:
+                out[(v, n)] = (st.mean(xs), st.stdev(xs) if len(xs) > 1 else 0.0, len(xs))
+    return out
+
+
+def collisions_plot(ax, rows, label_lines=True):
+    summ = collision_summary(rows)
+    xs = list(range(len(COLLISION_SIZES)))
+    for v, (label, _) in TALK_CONDITIONS.items():
+        pts = [(i, *summ[(v, n)][:2]) for i, n in enumerate(COLLISION_SIZES) if (v, n) in summ]
+        if not pts:
+            continue
+        x, m, sd = zip(*pts)
+        col = TALK_COLOURS[v]
+        ax.fill_between(x, [max(0, a - b) for a, b in zip(m, sd)], [min(100, a + b) for a, b in zip(m, sd)],
+                        color=col, alpha=0.12, linewidth=0)
+        ax.plot(x, m, color=col, linewidth=2.2, marker="o", markersize=7,
+                markeredgecolor="white", markeredgewidth=1.5, label=label)
+        if label_lines:                          # direct label at the right end
+            nudge = {0: 9, 1: -9}.get(v, 0)         # the two "no sync" lines end together
+            ax.annotate(label, (x[-1], m[-1]), textcoords="offset points", xytext=(10, nudge),
+                        va="center", fontsize=9.5, color="#1f2430")
+    ax.set_xticks(xs)
+    ax.set_xticklabels([str(n) for n in COLLISION_SIZES])
+    ax.set_xlim(-0.3, len(xs) - 1 + (1.9 if label_lines else 0.3))
+    ax.set_ylim(-2, 100)
+    ax.set_xlabel("Swarm size (drones)")
+    ax.set_ylabel("Messages lost to collisions (%)")
+    ax.set_title("Firefly sync + a timetable removes collisions", loc="left")
+    ax.legend(loc="upper right", fontsize=8.5, frameon=False) if not label_lines else None
+    return summ
+
+
+def fig_collisions(rows):
+    fig, ax = plt.subplots(figsize=(7.6, 4.2))
+    collisions_plot(ax, rows)
+    footnote(fig, "Each drone sends one data message per cycle. Line = mean of 50 runs, band = ±1 std; "
+                  "measured from 30 s to 40 s.\nTimetable = one time slot per drone, timed by the drone's "
+                  "own firefly clock. Collision = a receiver hears two drones talking at once.\n"
+                  "Bigger swarms = more, thinner slots (1/N of a cycle each), so messages are shorter: "
+                  "that is why losses without sync fall with size.")
+    return fig
+
+
 def fig_rogues(rows, summ):
     fig, ax = plt.subplots(figsize=(6.4, 4.0))
     spread_plot(ax, rows, summ, "mean_sync_last10s", "steady_mean", "steady_std",
@@ -94,7 +150,13 @@ def fig_rogues(rows, summ):
 
 def overview(data):
     fig, axes = plt.subplots(2, 3, figsize=(15, 8.2))
-    for ax, name in zip([axes.flat[i] for i in (0, 1, 2, 3, 5)], ["size", "loss", "drift", "speed", "walls"]):
+    coll = load(os.path.join(DATA, "sweep_collisions.csv")) if os.path.exists(
+        os.path.join(DATA, "sweep_collisions.csv")) else None
+    if coll:
+        collisions_plot(axes.flat[0], coll, label_lines=False)
+    panels = [(1, "size"), (2, "loss"), (3, "drift"), (5, "walls")] if coll else \
+             [(0, "size"), (1, "loss"), (2, "drift"), (3, "speed"), (5, "walls")]
+    for ax, name in [(axes.flat[i], n) for i, n in panels]:
         rows, summ = data[name]
         if rows:
             xl, title, fmt = SPECS[name]
@@ -118,6 +180,17 @@ def summary_md(data):
     for name, (setting, _, measure, seconds) in EXPERIMENTS.items():
         rows, summ = data[name]
         if not rows:
+            continue
+        if name == "collisions":
+            cs = collision_summary(rows)
+            lines += ["## collisions  (% of messages lost, mean ± std, 50 runs per cell, 30-40 s)", "",
+                      "| drones | " + " | ".join(l for l, _ in TALK_CONDITIONS.values()) + " |",
+                      "|---|" + "---|" * len(TALK_CONDITIONS)]
+            for n in COLLISION_SIZES:
+                cells = [f"{cs[(v, n)][0]:.1f}% ± {cs[(v, n)][1]:.1f}" if (v, n) in cs else "-"
+                         for v in TALK_CONDITIONS]
+                lines.append(f"| {n} | " + " | ".join(cells) + " |")
+            lines.append("")
             continue
         lines += [f"## {name}  (changing `{setting}`, {summ[0]['n']} runs per value)", ""]
         label = (lambda v: WALL_CONDITIONS[int(v)][0].replace("\n", " ")) if name == "walls" else str
@@ -151,6 +224,9 @@ def main():
             made.append((f"fig_{name}.png", fig_cycles(name, rows, summ)))
     if data["rogues"][0]:
         made.append(("fig_rogues.png", fig_rogues(*data["rogues"])))
+    coll_path = os.path.join(DATA, "sweep_collisions.csv")
+    if os.path.exists(coll_path):
+        made.append(("fig_collisions.png", fig_collisions(load(coll_path))))
     made.append(("fig_overview.png", overview(data)))
     for fname, fig in made:
         fig.savefig(os.path.join(OUT, fname))

@@ -32,7 +32,7 @@ experiments). Phase 3b (not started) compares the plain rule with the
 
 | Layer | Files | May import |
 |---|---|---|
-| Pure core | `fireflysync/oscillator.py`, `swarm.py`, `geometry.py`, `metrics.py`, (3b) `channel.py`, `reachback.py` | each other, stdlib, numpy |
+| Pure core | `fireflysync/oscillator.py`, `swarm.py`, `geometry.py`, `metrics.py`, `radio.py`, (3b) `channel.py`, `reachback.py` | each other, stdlib, numpy |
 | I/O | `view.py` (pygame), `link.py` (UDP) | core |
 | Orchestration | `session.py` (owns time + loop), `sweep.py`, `scripts/*` | anything |
 
@@ -53,10 +53,11 @@ experiments). Phase 3b (not started) compares the plain rule with the
 | `fireflysync/swarm.py` | Drones, positions, radio range + walls, cascades, external (real) nodes, scenarios: `set_walls/set_door/set_loss/set_drift/set_speed/set_rogues`, `healthy_phases` (excludes rogues and real LEDs) | done |
 | `fireflysync/geometry.py` | `segments_cross`, `blocked`, `two_rooms(area, door_open, door_width=6.0)` (thin/solid logic is in `swarm._hears`) | done |
 | `fireflysync/metrics.py` | Sync level (Kuramoto order parameter), circular mean, offset in ms, `time_to_sync`, `cycles`, `rhythm_groups` | done |
-| `fireflysync/session.py` | Run loop (real-time or headless), adds each LED on its first FIRE, HELLO/PING timers, scenario `apply()`, sync clock, CSV log | done |
+| `fireflysync/session.py` | Run loop (real-time or headless), adds each LED on its first FIRE, HELLO/PING timers, scenario `apply()`, sync clock, CSV log, live run log (`runs`, `run_stats`, `save_runs`) | done |
 | `fireflysync/link.py` | UDP: FIRE parse/format, HELLO discovery, PING round-trip → `oneway_ms` | done |
 | `fireflysync/view.py` | pygame UI, scales to any window (design 1280×720 × factor) | done |
-| `fireflysync/sweep.py` | Headless experiments in parallel → `data/sweep_<name>.csv` | done |
+| `fireflysync/radio.py` | Data messages + collisions: TDMA slots timed by each drone's own clock vs random timing; loss rate | done |
+| `fireflysync/sweep.py` | Headless experiments in parallel → `data/sweep_<name>.csv` (incl. `collisions`) | done |
 | `analysis/plots.py`, `scripts/plot_results.py` | Figures + `summary.md` into `data/figures/` | done |
 | `scripts/run_sweep.py` | Runs the experiments (`--experiment`, `--repeats 50`) | done |
 | `scripts/run_sim.py` | Virtual swarm only; scenario flags | done |
@@ -66,8 +67,8 @@ experiments). Phase 3b (not started) compares the plain rule with the
 | `scripts/latency_test.py` + `firmware/latency_test/` | Phase 0 Wi-Fi round-trip test | done |
 | `firmware/esp32_firefly/esp32_firefly.ino` | The real board: N LEDs, each a firefly | written, **needs first compile + run on hardware** |
 | `fireflysync/channel.py`, `reachback.py` | Artificial delay, Reachback | **stub — Phase 3b** |
-| `*.bat` | Windows launchers, use `.venv\Scripts\python.exe` | done |
-| `tests/` | pytest suite (80 tests) | done |
+| `*.bat` | Windows launchers, use `.venv\Scripts\python.exe`; `run_experiments.bat` = sweep + plots | done |
+| `tests/` | pytest suite (84 tests) | done |
 | `docs/` | `PLAN`, `ALGORITHM` (papers), `HARDWARE` (ESP team guide), `DEMO` (evaluation script), `EXPERIMENTS`, `results/` (committed figures) | |
 
 ## Invariants — do not break these
@@ -106,6 +107,16 @@ experiments). Phase 3b (not started) compares the plain rule with the
   drift ±2 %, speed 0.8 m/s — in `session.py` / `geometry.py`.
 - Sync level, rhythms and "synced" use **healthy** drones only (rogues and
   real LEDs excluded).
+- Radio model (`radio.py`): one slot per drone (slot i = drone i), message =
+  `AIRTIME` (60 %) of a slot, rest is guard time. A delivery to receiver R is
+  lost if R is talking or hears another talker at the same time. Collisions
+  are about DATA messages; firefly sync pulses are assumed detectable even
+  when they overlap (that is the Reachback problem - say so, don't hide it).
+  `Swarm.sync_on = False` is the "clocks not synced" baseline. The
+  `collisions` experiment counts losses from 30 s to 40 s.
+- Live run log: a run is recorded only if the epoch's first sample was below
+  95 % (it really had to converge), and `run_stats()` averages only runs with
+  the same `settings_label()`. Keep both, or the on-screen average lies.
 - Experiments use only connected layouts and grow the floor with the swarm
   in the size test (see `sweep.py` docstring). Keep that, or the results
   measure the layout instead of the algorithm.

@@ -27,7 +27,17 @@ from fireflysync.swarm import Swarm
 
 BASE = dict(drones=20, radio_range=9.0, area=(20.0, 12.0), coupling=0.01,
             loss=0.0, drift=0.0, speed=0.0, rogues=0, walls=False, door_open=False,
-            wall_type="solid")
+            wall_type="solid", radio_mode="slots", sync_on=True)
+
+# The "collisions" experiment: how each drone decides when to send its data.
+TALK_CONDITIONS = {
+    0: ("random timing", dict(radio_mode="random", sync_on=True)),
+    1: ("timetable, clocks not synced", dict(radio_mode="slots", sync_on=False)),
+    2: ("timetable + firefly sync", dict(radio_mode="slots", sync_on=True)),
+}
+COLLISION_SIZES = [5, 10, 20, 35, 50]
+MEASURE_FROM = 30.0     # collisions are counted from here to the end of the run
+                        # (a few small swarms take 20-30 s to sync; count the steady state)
 
 # The "walls" experiment: value -> (label, settings). Numbered so they sort in order.
 WALL_CONDITIONS = {
@@ -45,11 +55,13 @@ EXPERIMENTS = {
     "speed":  ("speed",  [0.0, 0.5, 1.0, 1.5], "time", 90.0),
     "rogues": ("rogues", [0, 1, 3, 5], "steady", 60.0),
     "walls":  ("wall",   list(WALL_CONDITIONS), "time", 90.0),
+    "collisions": ("condition", list(TALK_CONDITIONS), "collisions", 40.0),
 }
 
 FIELDS = ["experiment", "setting", "value", "seed", "drones", "area", "radio_range", "coupling",
           "loss", "drift", "speed", "rogues", "connected", "synced", "time_to_sync_s",
-          "cycles_to_sync", "mean_sync_last10s", "min_sync_last10s", "run_seconds"]
+          "cycles_to_sync", "mean_sync_last10s", "min_sync_last10s", "run_seconds",
+          "radio_mode", "sync_on", "msgs_sent", "msgs_lost_pct"]
 
 DT = 0.002
 
@@ -77,15 +89,22 @@ def make_swarm(c, seed, max_tries=200):
     return sw, s
 
 
-def run_once(config, seed, seconds, stop_when_synced=True):
-    """One simulation, no window. Returns a result row (dict)."""
+def run_once(config, seed, seconds, stop_when_synced=True, measure_from=0.0):
+    """One simulation, no window. Returns a result row (dict).
+    Messages lost to collisions are counted from `measure_from` seconds on."""
     c = {**BASE, **config}
     sw, seed = make_swarm(c, seed)
-    s = Session(sw, dt=DT)
+    sw.sync_on = c["sync_on"]
+    s = Session(sw, dt=DT, radio_mode=c["radio_mode"], radio_seed=seed)
+    base = None
     while sw.time < seconds:
         s._step()
+        if base is None and sw.time >= measure_from:
+            base = (s.radio.sent, s.radio.deliveries, s.radio.lost)
         if stop_when_synced and s.synced_after is not None:
             break
+    base = base or (0, 0, 0)
+    sent, deliv, lost = (s.radio.sent - base[0], s.radio.deliveries - base[1], s.radio.lost - base[2])
     tail = [lvl for t, lvl in zip(s.times, s.levels) if t >= sw.time - 10.0]
     tts = s.synced_after
     return {
@@ -99,17 +118,23 @@ def run_once(config, seed, seconds, stop_when_synced=True):
         "mean_sync_last10s": round(sum(tail) / len(tail), 4) if tail else None,
         "min_sync_last10s": round(min(tail), 4) if tail else None,
         "run_seconds": round(sw.time, 2),
+        "radio_mode": c["radio_mode"], "sync_on": c["sync_on"], "msgs_sent": sent,
+        "msgs_lost_pct": None if deliv == 0 else round(100 * lost / deliv, 2),
     }
 
 
 def _job(args):
-    name, setting, value, seed, seconds, stop = args
+    name, setting, value, seed, seconds, stop, extra = args
     config = {setting: value}
     if setting == "wall":
         config = dict(WALL_CONDITIONS[value][1])
-    if setting == "drones":
-        config["area"] = area_for(value)
-    row = run_once(config, seed, seconds, stop)
+    if setting == "condition":
+        config = dict(TALK_CONDITIONS[value][1])
+    config.update(extra)
+    if "drones" in config and "area" not in config:
+        config["area"] = area_for(config["drones"])
+    row = run_once(config, seed, seconds, stop,
+                   measure_from=MEASURE_FROM if setting == "condition" else 0.0)
     return {"experiment": name, "setting": setting, "value": value, **row}
 
 
@@ -118,7 +143,9 @@ def sweep(name, repeats, out_path, workers=None, progress=print):
     that dies part-way still leaves everything it finished on disk."""
     setting, values, measure, seconds = EXPERIMENTS[name]
     stop = measure == "time"
-    jobs = [(name, setting, v, 100 + r, seconds, stop) for v in values for r in range(repeats)]
+    sizes = COLLISION_SIZES if name == "collisions" else [None]
+    jobs = [(name, setting, v, 100 + r, seconds, stop, {} if n is None else {"drones": n})
+            for n in sizes for v in values for r in range(repeats)]
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     with open(out_path, "w", newline="") as f, ProcessPoolExecutor(workers) as pool:
         w = csv.DictWriter(f, FIELDS)
@@ -143,7 +170,7 @@ def load(path):
         except ValueError:
             return float(x)
     with open(path, newline="") as f:
-        return [{k: (v if k in ("experiment", "setting", "area") else num(v)) for k, v in row.items()}
+        return [{k: (v if k in ("experiment", "setting", "area", "radio_mode") else num(v)) for k, v in row.items()}
                 for row in csv.DictReader(f)]
 
 

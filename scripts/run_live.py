@@ -33,7 +33,7 @@ def main():
           (f"ESP32 at {args.peer}." if args.peer else "Searching for the ESP32 (it says hello every 2 s)..."))
     session = Session(swarm, dt=args.dt, link=link,
                       oneway_delay=None if args.oneway_ms is None else args.oneway_ms / 1000.0,
-                      log_path=log_path("live") if args.log else None)
+                      log_path=log_path("live") if args.log else None, print_runs=True)
 
     if args.no_window:
         import threading
@@ -53,6 +53,9 @@ def main():
         finally:
             view.close()
     print(json.dumps(result, indent=2))
+    saved = session.save_runs(log_path("runs"))
+    if saved:
+        print(f"{len(session.runs)} runs saved to {saved}")
 
 
 if __name__ == "__main__":

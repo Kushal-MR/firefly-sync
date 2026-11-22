@@ -2,6 +2,32 @@
 
 What Phase 3 measures, and how.
 
+## The payoff: collisions
+
+Why sync at all? Drones that share a beat can split each cycle into time
+slots, one per drone, and never talk over each other (TDMA). The
+`collisions` experiment compares three ways for each drone to time its one
+data message per cycle, on the same layouts, 5-50 drones, 50 runs each:
+
+- **random timing** - no timetable
+- **timetable, clocks not synced** - each drone uses its own unsynced clock
+- **timetable + firefly sync** - the same, after the firefly rule synced them
+
+Result: about 30-65 % of messages lost without sync (the two "no sync" cases
+are the same: a timetable read off clocks that disagree is just random
+timing), and **0-1.6 % with firefly sync** at every size. Figure:
+`docs/results/fig_collisions.png`.
+
+### collisions  (% of messages lost, mean ± std, 50 runs per cell, 30-40 s)
+
+| drones | random timing | timetable, clocks not synced | timetable + firefly sync |
+|---|---|---|---|
+| 5 | 64.6% ± 7.0 | 60.7% ± 20.4 | 0.8% ± 5.4 |
+| 10 | 60.6% ± 5.9 | 62.1% ± 14.5 | 0.0% ± 0.0 |
+| 20 | 49.6% ± 5.5 | 49.5% ± 10.5 | 0.1% ± 0.8 |
+| 35 | 39.7% ± 4.1 | 39.1% ± 9.4 | 0.2% ± 0.8 |
+| 50 | 31.5% ± 3.9 | 30.4% ± 7.7 | 1.6% ± 5.3 |
+
 ## Results so far (Phase 3a, plain firefly rule)
 
 Run with `python scripts/run_sweep.py` (50 runs per value, ~1 min), then

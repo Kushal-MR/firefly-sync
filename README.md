@@ -18,6 +18,11 @@ Indoor drone swarms have the same problem. Outdoors they use GPS as a shared
 clock; inside warehouses, tunnels and mines GPS does not reach, and without
 shared timing they talk over each other and lose messages.
 
+**Why sync matters:** drones that share a beat can split every cycle into
+time slots, one per drone, and never talk over each other. The window shows
+this live: a radio strip of each drone's message (green = delivered,
+red = collided) and the % of messages lost to collisions.
+
 This project builds a **virtual swarm of 20 drones on a laptop** and connects
 **a real ESP32 board with six LEDs over Wi-Fi** — each LED is its own firefly.
 Everything falls into one rhythm with no leader, and we test how far that
@@ -44,16 +49,17 @@ Double-click in the repo folder:
 | `run_sim.bat` | the virtual swarm (first run sets up `.venv`, ~2 min) |
 | `demo_fake_esp32.bat` | swarm + a pretend ESP32 with 6 LEDs, no hardware needed |
 | `demo_esp32.bat` | swarm + the real ESP32, found automatically on the hotspot |
+| `run_experiments.bat` | reruns every experiment (50 runs per setting, ~3 min), draws the graphs, opens them |
 
 Or by hand:
 
 ```bash
 pip install -r requirements.txt
-python -m pytest                          # 80 tests, all must pass
+python -m pytest                          # 84 tests, all must pass
 python scripts/run_sim.py                 # virtual swarm in a window
 python scripts/run_live.py                # swarm + real ESP32 (auto-discovery)
 python scripts/fake_esp32.py              # pretend ESP32 (run in a 2nd terminal)
-python scripts/run_sweep.py               # all experiments, ~1 min
+python scripts/run_sweep.py               # all experiments, ~3 min
 python scripts/plot_results.py            # figures into data/figures/
 ```
 
@@ -61,6 +67,7 @@ python scripts/plot_results.py            # figures into data/figures/
 
 | Key | Does |
 |---|---|
+| **T** | radio timing: **time slots** (each drone talks only in its own slot, timed by its firefly clock) ↔ **random** (no timetable) |
 | **W** | walls: off → **solid** (rooms can't hear each other → two rhythms) → **thin** (weak signal gets through → they merge) → off |
 | **D** | open a 6 m doorway in the wall → the rooms merge into one rhythm |
 | **X** | rogue (faulty) drones firing at random: 0 → 1 → 3 → 5 |
@@ -72,7 +79,11 @@ python scripts/plot_results.py            # figures into data/figures/
 
 The right side shows the sync level (with cycles to sync and number of
 rhythms), a phase map, the scenario switches, the ESP32 card (searching →
-found → *x/6 LEDs in sync*, measured Wi-Fi delay) and the last 30 s of sync.
+found → *x/6 LEDs in sync*, measured Wi-Fi delay), the last 30 s of sync,
+and a **Runs** table: every time the swarm goes from scattered to synced
+(start, **R**, a wall coming down…) it logs the cycles it took, with the
+average ± spread for the current settings. Closing the window saves all
+runs to `data/runs_<time>.csv`.
 The same scenarios exist as flags: `--walls --wall-type thin --door-open --rogues 3
 --drift 0.02 --move 0.8 --loss 0.3`.
 
@@ -80,6 +91,7 @@ The same scenarios exist as flags: `--walls --wall-type thin --door-open --rogue
 
 | Experiment | Result |
 |---|---|
+| **Collisions**: random timing / time slots without sync / time slots + firefly sync (20 drones) | **50 % / 50 % / 0.1 %** of messages lost; firefly sync stays under 2 % from 5 to 50 drones |
 | Swarm size 5 → 50 drones (same density) | 11 → 13 cycles to sync: barely grows |
 | Packet loss 0 → 50 % | 9 → 21 cycles, 98 % of runs still sync |
 | Clock drift ±0 → ±2 % / ±5 % | no change / 18 cycles, 88 % sync |

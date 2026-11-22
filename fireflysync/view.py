@@ -12,6 +12,7 @@ Keys:  R scramble   SPACE pause   L radio links   F fullscreen
 Scenarios (the session changes the swarm, this file only sends the key):
        W walls   D doorway   X rogue drones   C clock drift
        M moving drones   P packet loss
+Radio:  T timetable slots <-> random timing (the collision comparison)
 """
 import datetime
 import math
@@ -43,7 +44,9 @@ DRONE = (118, 130, 168)
 ROGUE = (239, 68, 68)
 WALL = (196, 206, 230)
 
-SCENARIO_KEYS = {pygame.K_w: "walls", pygame.K_d: "door", pygame.K_x: "rogue",
+RADIO = (147, 197, 253)                  # a message still on air
+SCENARIO_KEYS = {pygame.K_t: "talk",
+                 pygame.K_w: "walls", pygame.K_d: "door", pygame.K_x: "rogue",
                  pygame.K_c: "drift", pygame.K_m: "move", pygame.K_p: "loss"}
 
 DESIGN_W, DESIGN_H = 1280, 720          # every size below is for this window
@@ -58,6 +61,14 @@ FONT_SIZES = {                          # name: (family, size at scale 1, bold)
 
 def _lerp(a, b, t):
     return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
+
+
+def _short(settings):
+    """Compact scenario text for narrow places: "packet loss 30%" -> "loss 30%"."""
+    for long, short in (("packet loss", "loss"), ("rogue drones", "rogues"), ("clock drift", "drift"),
+                        ("moving drones", "moving"), (" walls", " wall"), ("open doorway", "door")):
+        settings = settings.replace(long, short)
+    return settings
 
 
 def _level_colour(lvl):
@@ -334,7 +345,8 @@ class View:
         right = f"{sw.n_virtual} drones" + (f"  +  {len(session.exts)} real LEDs" if session.exts else "")
         right += f"  ·  {rng}  ·  coupling {sw.oscillators[0].coupling:g}"
         self._card(rect, f"Floor plan  ·  {aw:g} × {ah:g} m", right)
-        inner = pygame.Rect(rect.x + u(32), rect.y + u(50), rect.w - u(64), rect.h - u(96))
+        band_h = u(92)
+        inner = pygame.Rect(rect.x + u(32), rect.y + u(50), rect.w - u(64), rect.h - u(96) - band_h)
         scale = min(inner.w / aw, inner.h / ah)
         ox = inner.x + (inner.w - aw * scale) / 2
         oy = inner.y + (inner.h - ah * scale) / 2
@@ -389,7 +401,9 @@ class View:
                 self._led(p, inten, name)
             else:
                 self._drone(p, inten, i in sw.rogues, sw.phase_of(i))
+        self._radio_ripples(session, pts)
         self.screen.set_clip(None)
+        self._radio_band(session, pygame.Rect(rect.x + u(16), inner.bottom + u(14), rect.w - u(32), band_h - u(10)))
 
         # scale bar + legend
         sx, sy = plan.x, rect.bottom - u(22)
@@ -407,6 +421,90 @@ class View:
         if sw.rogues:
             self._aa_circle((x + u(6), sy), u(6), ROGUE)
             x = self._text("rogue (faulty) drone", "small", MUTED, (x + u(18), sy), "midleft").right + u(24)
+
+    # ----- radio: who is talking, and did it get through? --------------------
+    def _msg_colour(self, tx):
+        if not tx.done:
+            return RADIO
+        return GOOD if tx.lost == 0 else BAD
+
+    def _radio_ripples(self, session, pts):
+        """A ring spreads from a drone while it sends: green = delivered,
+        red = garbled by a collision."""
+        u, now = self.u, session.swarm.time
+        life = 0.4
+        for tx in session.radio.recent:
+            age = now - tx.start
+            if not 0 <= age < life or tx.node >= len(pts):
+                continue
+            k = age / life
+            rad = int(u(13) + k * u(22))
+            ring = pygame.Surface((2 * rad + 4, 2 * rad + 4), pygame.SRCALPHA)
+            pygame.draw.circle(ring, (*self._msg_colour(tx), int(230 * (1 - k))), (rad + 2, rad + 2), rad, max(1, u(2)))
+            c = pts[tx.node]
+            self.screen.blit(ring, (int(c[0]) - rad - 2, int(c[1]) - rad - 2))
+
+    def _radio_band(self, session, band):
+        """The last cycle as a timetable: each block is one drone's message.
+        Synced: a neat comb of green blocks. Not synced: a red pile-up."""
+        u = self.u
+        radio, now, period = session.radio, session.swarm.time, session.swarm.period
+        pygame.draw.rect(self.screen, CARD_2, band, border_radius=u(10))
+        # right: the headline number
+        stat_w = u(230)
+        rate = radio.loss_rate()
+        sx = band.right - stat_w
+        if rate is None:
+            big, col = "-", MUTED
+        else:
+            big = f"{100 * rate:.0f}%"
+            col = GOOD if rate < 0.02 else WARN if rate < 0.15 else BAD
+        self._text(big, "big", col, (sx + u(4), band.y + u(4)))
+        self._text("messages lost to collisions", "small", MUTED, (sx + u(4), band.y + u(44)))
+        mode = "timetable slots" if radio.mode == "slots" else "random timing"
+        self._text(f"T: {mode}", "tiny", AMBER if radio.mode == "random" else FAINT, (sx + u(4), band.y + u(63)))
+        # left: the strip
+        strip = pygame.Rect(band.x + u(14), band.y + u(30), sx - band.x - u(34), u(30))
+        title = ("RADIO  ·  one cycle  ·  " + (f"{radio.slots} time slots, one per drone" if radio.mode == "slots"
+                                                else "no timetable: everyone talks at random"))
+        self._text(title, "tiny", MUTED, (strip.x, band.y + u(10)))
+        pygame.draw.rect(self.screen, BG, strip, border_radius=u(4))
+        if radio.mode == "slots":
+            cw = strip.w / radio.slots
+            if cw >= 4:
+                for k in range(1, radio.slots):
+                    x = int(strip.x + k * cw)
+                    pygame.draw.line(self.screen, GRID, (x, strip.y + u(3)), (x, strip.bottom - u(3)))
+        recent = sorted((tx for tx in radio.recent if now - tx.start <= period), key=lambda t: t.start)
+        lanes, lane_of = [], {}
+        for tx in recent:                       # overlapping messages stack up
+            for k, end in enumerate(lanes):
+                if end <= tx.start:
+                    lanes[k] = tx.end
+                    lane_of[id(tx)] = k
+                    break
+            else:
+                lane_of[id(tx)] = min(len(lanes), 3)
+                if len(lanes) < 4:
+                    lanes.append(tx.end)
+        n_lanes = max(1, min(4, len(lanes)))
+        lane_h = (strip.h - u(6)) / n_lanes
+        bw = max(u(3), radio.airtime / period * strip.w)
+        self.screen.set_clip(strip)
+        for tx in recent:
+            age = (now - tx.start) / period
+            colr = _lerp(self._msg_colour(tx), BG, 0.65 * age)
+            lane = lane_of[id(tx)]
+            r = pygame.Rect(int(strip.x + tx.pos * strip.w), int(strip.y + u(3) + lane * lane_h),
+                            int(bw), max(2, int(lane_h - u(2))))
+            pygame.draw.rect(self.screen, colr, r, border_radius=u(2))
+        self.screen.set_clip(None)
+        # key under the strip
+        y = strip.bottom + u(9)
+        x = strip.x
+        for colr, label in ((GOOD, "delivered"), (BAD, "collided: two drones talked at once")):
+            pygame.draw.rect(self.screen, colr, (x, y - u(5), u(10), u(10)), border_radius=u(2))
+            x = self._text(label, "tiny", MUTED, (x + u(15), y), "midleft").right + u(18)
 
     def _walls(self, sw, plan, P):
         u = self.u
@@ -489,7 +587,46 @@ class View:
             esp_h = u(112)
             self._esp32_card(session, pygame.Rect(rect.x, y, rect.w, esp_h))
             y += esp_h + gap
-        self._graph_card(session, pygame.Rect(rect.x, y, rect.w, rect.bottom - y))
+        runs_w = int(rect.w * 0.44)
+        h = rect.bottom - y
+        self._graph_card(session, pygame.Rect(rect.x, y, rect.w - runs_w - gap, h))
+        self._runs_card(session, pygame.Rect(rect.right - runs_w, y, runs_w, h))
+
+    def _runs_card(self, session, r):
+        """Every convergence the audience watched, and the average so far."""
+        u = self.u
+        runs = session.runs
+        current = session.settings_label()
+        self._card(r, "Runs", _short(current) if runs else None)
+        x0, x1 = r.x + u(16), r.right - u(16)
+        stats = session.run_stats()
+        foot_h = u(44)
+        if stats:
+            fy = r.bottom - foot_h
+            pygame.draw.line(self.screen, BORDER, (x0, fy), (x1, fy))
+            avg = f"avg {stats['mean']:.1f}" + (f" ± {stats['std']:.1f}" if stats["n"] > 1 else "")
+            self._text(avg + " cycles", "head", TEXT, (x0, fy + u(6)))
+            self._text(f"n = {stats['n']} · min {stats['min']:.1f} · max {stats['max']:.1f}",
+                       "tiny", MUTED, (x0, fy + u(26)))
+        if not runs:
+            self._text("Press R: each re-sync", "small", MUTED, (x0, r.y + u(44)))
+            self._text("is logged here", "small", MUTED, (x0, r.y + u(62)))
+            return
+        row_h = u(19)
+        top, bottom = r.y + u(38), r.bottom - (foot_h if stats else 0) - u(4)
+        fit = max(1, (bottom - top) // row_h)
+        for k, run in enumerate(runs[-fit:]):
+            y = top + k * row_h
+            same = run.settings == current
+            col = TEXT if same else FAINT
+            self._text(f"#{run.number}", "small", MUTED if same else FAINT, (x0, y))
+            self._text(f"{run.cycles:.1f}", "small", col, (x0 + u(32), y))
+            tag = run.cause if run.settings == "open floor" else _short(run.settings)
+            t = self.f("tiny").render(tag, True, MUTED if same else FAINT)
+            room = x1 - (x0 + u(74))
+            if t.get_width() > room:                     # keep long labels inside the card
+                t = t.subsurface((0, 0, room, t.get_height()))
+            self.screen.blit(t, (x0 + u(74), y + u(3)))
 
     def _sync_card(self, session, r):
         u = self.u
@@ -602,7 +739,12 @@ class View:
 
     def _graph_card(self, session, r):
         u = self.u
-        self._card(r, "Sync level", "last 30 s")
+        self._card(r, "Last 30 s")
+        lx, ly = r.right - u(16), r.y + u(21)                 # legend: sync / lost
+        for colr, label in ((BAD, "lost msgs"), (AMBER, "sync")):
+            t = self._text(label, "tiny", MUTED, (lx, ly), "midright")
+            pygame.draw.line(self.screen, colr, (t.x - u(16), ly), (t.x - u(4), ly), u(2))
+            lx = t.x - u(24)
         g = pygame.Rect(r.x + u(44), r.y + u(40), r.w - u(60), r.h - u(72))
         for frac, lab in ((1.0, "100%"), (0.5, "50%"), (0.0, "0%")):
             y = g.bottom - frac * g.h
@@ -612,7 +754,7 @@ class View:
         dash, lw = u(4), max(1, u(1))
         for x in range(g.x, g.right, 2 * dash):
             pygame.draw.line(self.screen, (60, 120, 96), (x, y95), (min(x + dash, g.right), y95), lw)
-        self._text("95% = synchronized", "tiny", (60, 150, 116), (g.x + u(4), y95 - u(4)), "bottomleft")
+        self._text("95% = synced", "tiny", (60, 150, 116), (g.x + u(4), y95 - u(4)), "bottomleft")
         for frac, lab in ((0, "-30 s"), (0.5, "-15 s"), (1, "now")):
             anchor = "midtop" if 0 < frac < 1 else ("topleft" if frac == 0 else "topright")
             self._text(lab, "small", FAINT, (g.x + frac * g.w, g.bottom + u(6)), anchor)
@@ -630,6 +772,16 @@ class View:
         self.screen.blit(fill, g.topleft)
         pygame.draw.lines(self.screen, AMBER, False, pts, u(2))
         self._aa_circle(pts[-1], u(4), AMBER)
+        seg = []                                              # lost messages (gaps where none sent)
+        for t, rate in session.loss_history:
+            if t < t_end - 30 or rate is None:
+                if len(seg) > 1:
+                    pygame.draw.lines(self.screen, BAD, False, seg, u(2))
+                seg = []
+                continue
+            seg.append((g.x + (t - (t_end - 30)) / 30 * g.w, g.bottom - rate * g.h))
+        if len(seg) > 1:
+            pygame.draw.lines(self.screen, BAD, False, seg, u(2))
 
     # ----- footer + toasts --------------------------------------------------
     def _footer(self, H, footer_h, gap):
@@ -638,7 +790,7 @@ class View:
         for key, label in (("R", "Scramble"), ("SPACE", "Pause"), ("L", "Radio links"),
                            ("F", "Fullscreen"), ("S", "Screenshot"), ("ESC", "Quit")):
             x = self._keycap(x, y, key, label)
-        self._text("W D X C M P  =  scenarios", "small", FAINT,
+        self._text("W D X C M P  =  scenarios    T  =  radio timing", "small", FAINT,
                    (self.screen.get_width() - gap - self.u(4), y + self.u(11)), "midright")
 
     def _draw_toasts(self, floor):

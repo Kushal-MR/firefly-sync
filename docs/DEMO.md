@@ -18,6 +18,7 @@ About 6 minutes. Practise it once end to end the day before.
 | `run_sim.bat` | virtual swarm only (first run also sets up `.venv`) |
 | `demo_fake_esp32.bat` | swarm + a pretend ESP32 with 6 LEDs, no hardware |
 | `demo_esp32.bat` | swarm + the real ESP32, found automatically |
+| `run_experiments.bat` | reruns all experiments live (~3 min) and opens the graphs |
 
 ## The script
 
@@ -30,11 +31,28 @@ About 6 minutes. Practise it once end to end the day before.
    turns green, *Synced in ~8 s · 8 cycles*. Point at the real LEDs
    blinking in time with the screen. *6/6 LEDs in sync*.
 
+   **Now point at the RADIO strip under the floor plan** - this is the
+   payoff. "Every drone sends one data message per cycle, in its own time
+   slot. At the start their clocks disagree, so messages overlap: red
+   blocks, red rings around drones, ~50 % lost. Once they sync, the slots
+   line up: a neat row of green blocks and **0 % lost**." The red line on
+   the small graph falls as the yellow sync line rises.
+
+   Then press **T** (random timing): same synced swarm, but no timetable -
+   red again, ~50 % lost. Press **T** again: back to 0 %. "You need both:
+   the timetable AND a shared clock. Firefly sync gives the shared clock
+   without any leader."
+
 3. **Press BOOT on the ESP32.** The six LEDs scatter, then pull back in.
    "It recovers on its own - no reset, no leader."
 
 4. **R** - scramble the whole virtual swarm. Watch the phase map dots
-   gather into one clump and the arrow grow.
+   gather into one clump and the arrow grow. **Press R 4-5 more times**,
+   waiting for green each time: the *Runs* table fills up and shows the
+   average cycles ± spread. "These are live statistics, not a recording -
+   every run starts from a new random scramble."
+   Then **P** to 30 % loss and press R a couple of times: the new runs get
+   their own average (the header shows which settings it is for).
 
 5. **Walls.** Press **W**: a *solid* wall (like concrete). The rooms can't
    hear each other, so the card says **2 rhythms**. "No communication, no
@@ -57,6 +75,9 @@ About 6 minutes. Practise it once end to end the day before.
    drones: both still sync. Turn them off again.
 
 9. **The numbers (1 min).** Show `fig_overview.png` (and `fig_walls.png`): 50 runs per setting.
+   If asked "where do these come from?": double-click `run_experiments.bat`,
+   it reruns all ~1400 simulations in about 2 minutes and redraws them.
+   Every single run is a row in `data/sweep_*.csv` (opens in Excel).
    Thin wall: 94 % of layouts still sync (15 cycles vs 9 with no wall).
    Bigger swarm 5→50 drones: 11→13 cycles. 50 % loss: still 98 % of runs
    sync. 1 rogue: harmless; 5 rogues: sync drops to ~87 %.

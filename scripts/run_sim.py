@@ -20,7 +20,7 @@ def main():
     if not swarm.is_connected() and not swarm.walls_on:
         print("WARNING: with this radio range some drones can't hear the rest - "
               "they may never sync. Try a bigger --range or fewer drones.")
-    session = Session(swarm, dt=args.dt, log_path=log_path("sim") if args.log else None)
+    session = Session(swarm, dt=args.dt, log_path=log_path("sim") if args.log else None, print_runs=True)
 
     if args.no_window:
         result = session.run_headless(args.seconds or 60)
@@ -32,6 +32,9 @@ def main():
         finally:
             view.close()
     print(json.dumps(result, indent=2))
+    saved = session.save_runs(log_path("runs"))
+    if saved:
+        print(f"{len(session.runs)} runs saved to {saved}")
 
 
 if __name__ == "__main__":
